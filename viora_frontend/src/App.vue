@@ -144,7 +144,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#09090b] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
+  <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
    <Transition name="fade">
       <div v-if="isSearchOpen" class="fixed inset-0 z-[100] bg-black/70  flex justify-center items-start pt-[12vh]" @click.self="toggleSearch">
@@ -212,11 +212,11 @@ onUnmounted(() => {
 
     <header 
       :class="[
-        'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12',
+        'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-900 px-6 lg:px-12',
         isScrolled ? 'backdrop-blur-sm py-3 border-b border-white/5 bg-black/20 shadow-2xl' : 'bg-transparent py-8'
       ]"
     >
-      <h1 class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
+      <h1 class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-600" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
         <span class="text-white">V</span>
         <span class="overflow-hidden transition-all duration-500" :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">IORA</span>
         <span class="text-blue-500">.</span>
@@ -284,7 +284,7 @@ onUnmounted(() => {
             <div 
               v-for="movie in category.movies" 
               :key="movie.id"
-              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:z-40 hover:shadow-[0_0_40px_rgba(59,130,246,0.25)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
+              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
             >
               <img :src="getImageUrl(movie.backdrop_path, 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
 
@@ -304,6 +304,8 @@ onUnmounted(() => {
                     </div>
                 </div>
               </div>
+              <div class="absolute inset-0 rounded-2xl pointer-events-none 
+bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
                  <div class="w-14 h-14 bg-white/10  rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
@@ -317,13 +319,21 @@ onUnmounted(() => {
     </div>
 
     <nav class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-      <div class="flex items-center gap-2 px-4 py-3 bg-[#18181b]/30  border border-white/10 rounded-full shadow-lg backdrop-blur-sm">
+      <div class="flex items-center gap-2 px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]  border border-white/10 rounded-full shadow-lg ">
         <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
           <Home class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
         </div>
         
         <div @click="toggleSearch" class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
-          <Search class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" :class="{ 'text-blue-500': isSearchOpen }" />
+          <Search 
+            class="w-6 h-6 transition-transform transition-colors"
+            :class="[
+              isSearchOpen 
+                ? 'text-blue-500' 
+                : 'text-gray-400 group-hover:text-white',
+              'group-hover:-translate-y-1'
+            ]"
+          />
         </div>
         
         <div class="w-px h-8 bg-white/10 mx-1"></div>
