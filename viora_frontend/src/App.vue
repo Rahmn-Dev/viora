@@ -370,7 +370,7 @@ onUnmounted(() => {
 
            <div class="pointer-events-auto group w-200 h-33 flex justify-end items-start -mt-2 -mr-1">
               <button @click="closePlayer" class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer">
-                 <X class="w- h-6" />
+                 <X class="w-10 h-10" />
               </button>
            </div>
 
