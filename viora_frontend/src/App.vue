@@ -1,10 +1,10 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star } from 'lucide-vue-next';
+import { ref, onMounted, onUnmounted, nextTick } from 'vue';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star, Flame, X, Loader2 } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Flame } from 'lucide-vue-next';
+
 const heroMovies = ref([]);
 const currentHeroIndex = ref(0);
 const movieCategories = ref([]);
@@ -12,12 +12,19 @@ const isLoading = ref(true);
 const isScrolled = ref(false);
 let heroTimer = null;
 
+// Search State
+const isSearchOpen = ref(false);
+const searchQuery = ref('');
+const searchResults = ref([]);
+const isSearching = ref(false);
+let searchTimeout = null;
+
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const BASE_URL = 'https://api.themoviedb.org/3';
 
 // Helper Image Loader dengan wsrv.nl (WebP + Cache)
 const getImageUrl = (path, width = 'w780') => {
-  if (!path) return '';
+  if (!path) return 'https://via.placeholder.com/300x450?text=No+Image';
   const tmdbUrl = `https://image.tmdb.org/t/p/${width}${path}`;
   return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=80&n=-1`;
 };
@@ -48,10 +55,8 @@ const fetchAllData = async () => {
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=16`)
     ]);
 
-    // Proses Logo untuk Hero (5 film teratas)
     heroMovies.value = await enrichMoviesWithLogos(trending.data.results.slice(0, 5));
 
-    // Proses Logo untuk semua Kategori (Limit 10 film per kategori biar gak overload API)
     const categoriesData = [
       { id: 1, title: 'Trending Now', raw: trending.data.results.slice(5, 15) },
       { id: 2, title: 'Top Rated Movies', raw: topRated.data.results.slice(0, 10) },
@@ -73,7 +78,52 @@ const fetchAllData = async () => {
   }
 };
 
-const handleScroll = () => { isScrolled.value = window.scrollY > 50; };
+// Fitur Spotlight Search
+const toggleSearch = () => {
+  isSearchOpen.value = !isSearchOpen.value;
+  if (isSearchOpen.value) {
+    nextTick(() => document.getElementById('viora-search-input')?.focus());
+  } else {
+    searchQuery.value = '';
+    searchResults.value = [];
+  }
+};
+
+const performSearch = async () => {
+  if (!searchQuery.value.trim()) {
+    searchResults.value = [];
+    return;
+  }
+  isSearching.value = true;
+  try {
+    const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false`);
+    // Filter out people, keep only movies and tv shows
+    searchResults.value = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv').slice(0, 6);
+  } catch (error) {
+    console.error(error);
+  } finally {
+    isSearching.value = false;
+  }
+};
+
+const onSearchInput = () => {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(performSearch, 500); // Debounce 500ms
+};
+let ticking = false;
+const handleScroll = () => {
+  if (!ticking) {
+    window.requestAnimationFrame(() => {
+      isScrolled.value = window.scrollY > 50;
+      ticking = false;
+    });
+    ticking = true;
+  }
+};
+const handleKeydown = (e) => {
+  if (e.key === 'Escape' && isSearchOpen.value) toggleSearch();
+};
+
 const startHeroCarousel = () => {
   heroTimer = setInterval(() => {
     currentHeroIndex.value = (currentHeroIndex.value + 1) % heroMovies.value.length;
@@ -83,10 +133,12 @@ const startHeroCarousel = () => {
 onMounted(() => {
   fetchAllData();
   window.addEventListener('scroll', handleScroll);
+  window.addEventListener('keydown', handleKeydown);
 });
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll);
+  window.removeEventListener('keydown', handleKeydown);
   if (heroTimer) clearInterval(heroTimer);
 });
 </script>
@@ -94,10 +146,74 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-[#09090b] text-white font-sans selection:bg-red-600/30 overflow-x-hidden pb-32">
     
+   <Transition name="fade">
+      <div v-if="isSearchOpen" class="fixed inset-0 z-[100] bg-black/70  flex justify-center items-start pt-[12vh]" @click.self="toggleSearch">
+        <div class="w-full max-w-2xl bg-[#18181b]/80  border border-white/10 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] overflow-hidden flex flex-col mx-4 transform transition-all">
+          
+          <div class="flex items-center px-5 py-4 border-b border-white/10 bg-black/20">
+            <Search class="w-6 h-6 text-gray-400 mr-4" />
+            <input 
+              id="viora-search-input" 
+              v-model="searchQuery" 
+              @input="onSearchInput" 
+              placeholder="Search movies, series, or actors..." 
+              class="flex-1 bg-transparent border-none outline-none text-xl text-white placeholder:text-gray-500 font-medium"
+              autocomplete="off"
+            />
+            <button v-if="searchQuery" @click="searchQuery = ''; searchResults = []" class="p-1 mr-2 hover:bg-white/10 rounded-full transition-colors">
+              <X class="w-5 h-5 text-gray-400" />
+            </button>
+            <div class="px-2 py-1 bg-white/10 rounded text-[10px] font-bold text-gray-400 tracking-widest uppercase hidden md:block">ESC</div>
+          </div>
+
+          <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2">
+            
+            <div v-if="isSearching" class="p-10 flex flex-col items-center justify-center gap-3">
+              <Loader2 class="w-8 h-8 animate-spin text-red-600" />
+              <span class="text-sm text-gray-400 font-medium animate-pulse">Searching the universe...</span>
+            </div>
+
+            <div v-else-if="searchResults.length === 0" class="p-10 text-center flex flex-col items-center justify-center">
+              <Search class="w-12 h-12 text-gray-600 mb-3" />
+              <p class="text-gray-400 font-medium">No results found for "<span class="text-white">{{ searchQuery }}</span>"</p>
+            </div>
+
+            <div v-else class="space-y-1 p-1">
+              <div 
+                v-for="item in searchResults" 
+                :key="item.id" 
+                class="flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl cursor-pointer transition-colors group"
+              >
+                <div class="w-14 h-20 bg-white/5 rounded-md overflow-hidden flex-shrink-0 shadow-md">
+                  <img :src="getImageUrl(item.poster_path || item.backdrop_path, 'w185')" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                </div>
+                
+                <div class="flex-1 min-w-0">
+                  <h4 class="text-white font-bold text-lg leading-tight group-hover:text-red-500 transition-colors truncate">
+                    {{ item.title || item.name }}
+                  </h4>
+                  <div class="flex items-center gap-3 text-xs text-gray-400 mt-2 font-medium">
+                    <span class="bg-white/10 px-2 py-0.5 rounded text-white tracking-wide">{{ item.media_type === 'tv' ? 'Series' : 'Movie' }}</span>
+                    <span>{{ (item.release_date || item.first_air_date)?.substring(0,4) }}</span>
+                    <span class="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded"><Star class="w-3 h-3 fill-current"/> {{ item.vote_average?.toFixed(1) }}</span>
+                  </div>
+                </div>
+                
+                <div class="w-10 h-10 rounded-full flex items-center justify-center group-hover:bg-white/10 transition-colors">
+                  <Play class="w-5 h-5 text-gray-400 group-hover:text-white" />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <header 
       :class="[
-        'fixed top-0 w-full z-50 flex items-center justify-between transition-all duration-700 px-6 lg:px-12',
-        isScrolled ? 'backdrop-blur-xl py-3 border-b border-white/5 bg-black/20 shadow-2xl' : 'bg-transparent py-8'
+        'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12',
+        isScrolled ? 'backdrop-blur-sm py-3 border-b border-white/5 bg-black/20 shadow-2xl' : 'bg-transparent py-8'
       ]"
     >
       <h1 class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
@@ -106,7 +222,7 @@ onUnmounted(() => {
         <span class="text-red-600">.</span>
       </h1>
 
-      <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-red-600 to-red-400 p-[2px] cursor-pointer hover:scale-110 transition-transform">
+      <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-red-600 to-red-400 p-[2px] cursor-pointer hover:scale-110 transition-transform shadow-lg shadow-red-600/20">
         <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center">
            <UserIcon class="w-5 h-5" />
         </div>
@@ -136,7 +252,7 @@ onUnmounted(() => {
                    <span class="text-red-600 font-bold text-[10px] uppercase tracking-[0.3em]">Viora Originals</span>
                 </div>
 
-                <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-[0_15px_15px_rgba(0,0,0,0.8)]" />
+                <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-lg" />
                 <h2 v-else class="text-5xl lg:text-7xl font-black uppercase italic tracking-tighter">{{ movie.title || movie.name }}</h2>
               </div>
 
@@ -145,10 +261,10 @@ onUnmounted(() => {
               </p>
 
               <div class="flex items-center gap-4">
-                <Button size="lg" class="bg-white text-black hover:bg-red-600 hover:text-white font-black px-10 h-16 rounded-2xl transition-all shadow-2xl">
+                <Button size="lg" class="bg-white text-black hover:bg-red-600 hover:text-white font-black px-10 h-16 rounded-2xl transition-transform transition-opacity shadow-2xl">
                   <Play class="w-6 h-6 mr-2 fill-current" /> Play
                 </Button>
-                <Button size="lg" variant="outline" class="bg-white/10 backdrop-blur-xl border-white/20 hover:bg-white/20 h-16 px-10 rounded-2xl font-bold">
+                <Button size="lg" variant="outline" class="bg-white/10  border-white/20 hover:bg-white/20 h-16 px-10 rounded-2xl font-bold">
                   <Plus class="w-6 h-6 mr-2" /> My List
                 </Button>
               </div>
@@ -168,29 +284,29 @@ onUnmounted(() => {
             <div 
               v-for="movie in category.movies" 
               :key="movie.id"
-              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-all duration-500 hover:scale-110 hover:z-50 hover:shadow-lg will-change-transform   transform-gpu  group ring-1 ring-white/5 cursor-pointer"
+              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:z-40 hover:shadow-2xl  transform-gpu group ring-1 ring-white/5 cursor-pointer"
             >
-              <img :src="getImageUrl(movie.backdrop_path, 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all duration-700 group-hover:scale-105" />
+              <img :src="getImageUrl(movie.backdrop_path, 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
 
               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent p-5 flex flex-col justify-end">
                 
                 <div class="mb-2">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-[0_5px_5px_rgba(0,0,0,0.5)] transition-transform group-hover:scale-110 origin-left" />
+                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                   <h4 v-else class="text-sm md:text-base font-black uppercase italic tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
 
-                <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-all duration-500 translate-y-2 group-hover:translate-y-0">
+                <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
                    <div class="bg-[#f5c518] text-black px-1.5 py-0.5 rounded ">IMDb {{ movie.vote_average.toFixed(1) }}</div>
                    <span class="text-white-600">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-                   <div class="bg-[#E97451]/90 text-white px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold backdrop-blur-sm">
+                   <div class="bg-[#E97451]/90 text-white px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold ">
                       <Flame class="w-3 h-3 opacity-80" />
                       <span>{{ movie.vote_count }}</span>
                     </div>
                 </div>
               </div>
 
-              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
-                 <div class="w-14 h-14 bg-white/10 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
+              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
+                 <div class="w-14 h-14 bg-white/10  rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
                     <Play class="w-6 h-6 text-white fill-current" />
                  </div>
               </div>
@@ -201,51 +317,39 @@ onUnmounted(() => {
     </div>
 
     <nav class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-
-      <div class="flex items-center gap-2 px-4 py-3 bg-[#18181b]/10 backdrop-blur-xl border border-white/10 rounded-full shadow-[0_25px_60px_-12px_rgba(0,0,0,1)]">
-
-      <div class="p-3 rounded-full hover:bg-white/10 transition-all cursor-pointer group">
-
-      <Home class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-all" />
-
+      <div class="flex items-center gap-2 px-4 py-3 bg-[#18181b]/30  border border-white/10 rounded-full shadow-lg backdrop-blur-sm">
+        <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
+          <Home class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
+        </div>
+        
+        <div @click="toggleSearch" class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
+          <Search class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" :class="{ 'text-red-500': isSearchOpen }" />
+        </div>
+        
+        <div class="w-px h-8 bg-white/10 mx-1"></div>
+        <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
+          <Clapperboard class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
+        </div>
+        <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
+          <MonitorPlay class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
+        </div>
+        <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
+          <Bookmark class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
+        </div>
       </div>
-
-      <div class="p-3 rounded-full hover:bg-white/10 transition-all cursor-pointer group">
-
-      <Search class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-all" />
-
-      </div>
-
-      <div class="w-px h-8 bg-white/10 mx-1"></div>
-
-      <div class="p-3 rounded-full hover:bg-white/10 transition-all cursor-pointer group">
-
-      <Clapperboard class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-all" />
-
-      </div>
-
-      <div class="p-3 rounded-full hover:bg-white/10 transition-all cursor-pointer group">
-
-      <MonitorPlay class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-all" />
-
-      </div>
-
-      <div class="p-3 rounded-full hover:bg-white/10 transition-all cursor-pointer group">
-
-      <Bookmark class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-all" />
-
-      </div>
-
-      </div>
-
-      </nav>
+    </nav>
   </div>
 </template>
 
 <style scoped>
+/* Transisi untuk banner utama */
 .hero-fade-enter-active, .hero-fade-leave-active { transition: all 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
 .hero-fade-enter-from { opacity: 0; transform: translateY(20px); }
 .hero-fade-leave-to { opacity: 0; transform: translateY(-20px); }
+
+/* Transisi untuk Spotlight Overlay */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; transform: scale(0.98) translateY(-10px); }
 
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
