@@ -144,7 +144,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-[#09090b] text-white font-sans selection:bg-red-600/30 overflow-x-hidden pb-32">
+  <div class="min-h-screen bg-[#09090b] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
    <Transition name="fade">
       <div v-if="isSearchOpen" class="fixed inset-0 z-[100] bg-black/70  flex justify-center items-start pt-[12vh]" @click.self="toggleSearch">
@@ -169,7 +169,7 @@ onUnmounted(() => {
           <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2">
             
             <div v-if="isSearching" class="p-10 flex flex-col items-center justify-center gap-3">
-              <Loader2 class="w-8 h-8 animate-spin text-red-600" />
+              <Loader2 class="w-8 h-8 animate-spin text-blue-500" />
               <span class="text-sm text-gray-400 font-medium animate-pulse">Searching the universe...</span>
             </div>
 
@@ -189,7 +189,7 @@ onUnmounted(() => {
                 </div>
                 
                 <div class="flex-1 min-w-0">
-                  <h4 class="text-white font-bold text-lg leading-tight group-hover:text-red-500 transition-colors truncate">
+                  <h4 class="text-white font-bold text-lg leading-tight group-hover:text-blue-500 transition-colors truncate">
                     {{ item.title || item.name }}
                   </h4>
                   <div class="flex items-center gap-3 text-xs text-gray-400 mt-2 font-medium">
@@ -219,10 +219,10 @@ onUnmounted(() => {
       <h1 class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
         <span class="text-white">V</span>
         <span class="overflow-hidden transition-all duration-500" :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">IORA</span>
-        <span class="text-red-600">.</span>
+        <span class="text-blue-500">.</span>
       </h1>
 
-      <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-red-600 to-red-400 p-[2px] cursor-pointer hover:scale-110 transition-transform shadow-lg shadow-red-600/20">
+      <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] cursor-pointer hover:scale-110 transition-transform shadow-lg shadow-blue-500/20">
         <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center">
            <UserIcon class="w-5 h-5" />
         </div>
@@ -242,14 +242,14 @@ onUnmounted(() => {
           <div v-for="(movie, index) in heroMovies" :key="movie.id" v-show="index === currentHeroIndex" class="absolute inset-0">
             <img :src="getImageUrl(movie.backdrop_path, 'original')" class="w-full h-full object-cover opacity-60 scale-100 transition-transform duration-[10s]" :class="index === currentHeroIndex ? 'scale-110' : 'scale-100'" />
             
-            <div class="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#09090b]/30 to-transparent"></div>
-            <div class="absolute inset-0 bg-gradient-to-r from-[#09090b] via-[#09090b]/50 to-transparent"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#0b1220]/30 to-transparent"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-[#09090b] via-[#0b1220]/50 to-transparent"></div>
 
             <div class="absolute bottom-[15%] left-6 lg:left-12 max-w-2xl space-y-8 z-10">
               <div class="space-y-6">
                 <div class="flex items-center gap-3">
                    <div class="flex items-center bg-[#f5c518] text-black px-2 py-0.5 rounded font-black text-[10px]">IMDb {{ movie.vote_average.toFixed(1) }}</div>
-                   <span class="text-red-600 font-bold text-[10px] uppercase tracking-[0.3em]">Viora Originals</span>
+                   <span class="text-blue-500 font-bold text-[12px] uppercase tracking-[0.3em]">Viora Originals</span>
                 </div>
 
                 <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-lg" />
@@ -261,7 +261,7 @@ onUnmounted(() => {
               </p>
 
               <div class="flex items-center gap-4">
-                <Button size="lg" class="bg-white text-black hover:bg-red-600 hover:text-white font-black px-10 h-16 rounded-2xl transition-transform transition-opacity shadow-2xl">
+                <Button size="lg" class="bg-white text-black hover:bg-blue-500 hover:text-white font-black px-10 h-16 rounded-2xl transition-transform transition-opacity shadow-2xl">
                   <Play class="w-6 h-6 mr-2 fill-current" /> Play
                 </Button>
                 <Button size="lg" variant="outline" class="bg-white/10  border-white/20 hover:bg-white/20 h-16 px-10 rounded-2xl font-bold">
@@ -276,7 +276,7 @@ onUnmounted(() => {
       <main class="relative z-20 -mt-20 space-y-10 pb-20">
         <section v-for="category in movieCategories" :key="category.id" class="pl-6 lg:pl-12">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 ">
-            <span class="w-1.5 h-8 bg-red-600 rounded-full"></span>
+            <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span>
             {{ category.title }}
           </h3>
           
@@ -284,7 +284,7 @@ onUnmounted(() => {
             <div 
               v-for="movie in category.movies" 
               :key="movie.id"
-              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:z-40 hover:shadow-2xl  transform-gpu group ring-1 ring-white/5 cursor-pointer"
+              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:z-40 hover:shadow-[0_0_40px_rgba(59,130,246,0.25)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
             >
               <img :src="getImageUrl(movie.backdrop_path, 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
 
@@ -323,7 +323,7 @@ onUnmounted(() => {
         </div>
         
         <div @click="toggleSearch" class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
-          <Search class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" :class="{ 'text-red-500': isSearchOpen }" />
+          <Search class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" :class="{ 'text-blue-500': isSearchOpen }" />
         </div>
         
         <div class="w-px h-8 bg-white/10 mx-1"></div>

@@ -35,7 +35,9 @@
   
   --color-border: hsl(240 3.7% 15.9%);
   --color-input: hsl(240 3.7% 15.9%);
-  --color-ring: hsl(240 4.9% 83.9%);
+  --color-ring: hsl(217 91% 60%);
+  --color-primary: hsl(217 91% 60%);
+  --color-accent: hsl(217 91% 60%);
   
   --radius: 0.5rem;
   --radius-sm: calc(var(--radius) - 4px);
