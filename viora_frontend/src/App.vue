@@ -352,12 +352,17 @@ const checkLoginStatus = () => {
 
 // --- FUNGSI VIDEO PLAYER ---
 const openPlayer = (movie) => {
+  // 🚫 CEK LOGIN DULU
+  if (!isLoggedIn.value) {
+    isLoginOpen.value = true;
+    return;
+  }
+
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
   currentMedia.value = movie;
 
   let startTime = 0;
 
-  // 🔥 cari progress dari history
   const history = watchHistoryMovies.value.find(m => m.id === movie.id);
   if (history && history.current_time_seconds) {
     startTime = Math.floor(history.current_time_seconds);
