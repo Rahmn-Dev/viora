@@ -1,5 +1,5 @@
 <script setup>
-axios.defaults.baseURL = 'http://localhost:8000';
+axios.defaults.baseURL = 'http://192.168.101.41:8000';
 
 axios.interceptors.response.use(
   res => res,
