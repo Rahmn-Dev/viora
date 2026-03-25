@@ -212,11 +212,11 @@ onUnmounted(() => {
 
     <header 
       :class="[
-        'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-900 px-6 lg:px-12',
+        'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12',
         isScrolled ? 'backdrop-blur-sm py-3 border-b border-white/5 bg-black/20 shadow-2xl' : 'bg-transparent py-8'
       ]"
     >
-      <h1 class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-600" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
+      <h1 class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
         <span class="text-white">V</span>
         <span class="overflow-hidden transition-all duration-500" :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">IORA</span>
         <span class="text-blue-500">.</span>
@@ -280,7 +280,8 @@ onUnmounted(() => {
             {{ category.title }}
           </h3>
           
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth ">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth 
+hover:shadow-[inset_0_-20px_40px_rgba(59,130,246,0.08)] transition-shadow duration-500" style="padding-bottom: 20px; padding-top: 20px; ">
             <div 
               v-for="movie in category.movies" 
               :key="movie.id"
@@ -329,7 +330,7 @@ bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 t
             class="w-6 h-6 transition-transform transition-colors"
             :class="[
               isSearchOpen 
-                ? 'text-blue-500' 
+                ? 'text-blue-500 drop-shadow-[0_0_6px_rgba(59,130,246,0.6)]' 
                 : 'text-gray-400 group-hover:text-white',
               'group-hover:-translate-y-1'
             ]"
@@ -361,6 +362,22 @@ bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 t
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; transform: scale(0.98) translateY(-10px); }
 
-.hide-scrollbar::-webkit-scrollbar { display: none; }
-.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+/* Custom scrollbar */
+.hide-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.hide-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hide-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(59,130,246,0.3);
+  border-radius: 999px;
+  transition: all 0.3s ease;
+}
+
+.hide-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(59,130,246,0.7);
+}
 </style>
