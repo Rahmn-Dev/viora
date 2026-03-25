@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star, Flame, X, Loader2 } from 'lucide-vue-next';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star, Flame, X, Loader2, LogOut, Settings } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,17 +19,24 @@ const searchResults = ref([]);
 const isSearching = ref(false);
 let searchTimeout = null;
 
+// Auth & Profile State
+const isLoggedIn = ref(false);
+const currentUser = ref({ username: '' });
+const isLoginOpen = ref(false);
+const isProfileOpen = ref(false);
+const loginData = ref({ username: '', password: '' });
+const isLoggingIn = ref(false);
+const loginError = ref('');
+
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const BASE_URL = 'https://api.themoviedb.org/3';
 
-// Helper Image Loader dengan wsrv.nl (WebP + Cache)
 const getImageUrl = (path, width = 'w780') => {
   if (!path) return 'https://via.placeholder.com/300x450?text=No+Image';
   const tmdbUrl = `https://image.tmdb.org/t/p/${width}${path}`;
   return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=80&n=-1`;
 };
 
-// Fungsi sakti buat ambil Logo PNG Transparan
 const fetchLogo = async (id, type = 'movie') => {
   try {
     const res = await axios.get(`${BASE_URL}/${type}/${id}/images?api_key=${API_KEY}&include_image_language=en,null`);
@@ -38,7 +45,6 @@ const fetchLogo = async (id, type = 'movie') => {
   } catch (e) { return null; }
 };
 
-// Fungsi untuk memperkaya data film dengan logo secara massal
 const enrichMoviesWithLogos = async (movies) => {
   return Promise.all(movies.map(async (m) => {
     const logoPath = await fetchLogo(m.id, m.media_type || 'movie');
@@ -78,8 +84,9 @@ const fetchAllData = async () => {
   }
 };
 
-// Fitur Spotlight Search
 const toggleSearch = () => {
+  if (isLoginOpen.value) isLoginOpen.value = false;
+  if (isProfileOpen.value) isProfileOpen.value = false;
   isSearchOpen.value = !isSearchOpen.value;
   if (isSearchOpen.value) {
     nextTick(() => document.getElementById('viora-search-input')?.focus());
@@ -97,7 +104,6 @@ const performSearch = async () => {
   isSearching.value = true;
   try {
     const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false`);
-    // Filter out people, keep only movies and tv shows
     searchResults.value = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv').slice(0, 6);
   } catch (error) {
     console.error(error);
@@ -108,8 +114,87 @@ const performSearch = async () => {
 
 const onSearchInput = () => {
   clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(performSearch, 500); // Debounce 500ms
+  searchTimeout = setTimeout(performSearch, 500);
 };
+
+const handleUserIconClick = () => {
+  if (isSearchOpen.value) toggleSearch();
+  
+  if (isLoggedIn.value) {
+    isProfileOpen.value = !isProfileOpen.value;
+    if (isLoginOpen.value) isLoginOpen.value = false;
+  } else {
+    isLoginOpen.value = !isLoginOpen.value;
+    if (isProfileOpen.value) isProfileOpen.value = false;
+    
+    if (isLoginOpen.value) {
+      loginData.value = { username: '', password: '' };
+      loginError.value = '';
+      nextTick(() => document.getElementById('viora-username-input')?.focus());
+    }
+  }
+};
+
+const handleLogin = async () => {
+  if (!loginData.value.username || !loginData.value.password) {
+    loginError.value = 'Please fill in all fields.';
+    return;
+  }
+  
+  isLoggingIn.value = true;
+  loginError.value = '';
+  
+  try {
+    // TODO: Ganti URL ini dengan endpoint Django
+    // const response = await axios.post('http://localhost:8000/api/login/', loginData.value);
+    
+    // Simulasi loading
+    await new Promise(resolve => setTimeout(resolve, 1500)); 
+    
+    // Set State
+    isLoggedIn.value = true;
+    currentUser.value = { username: loginData.value.username };
+    
+    // SIMPAN KE LOCALSTORAGE (Ini Kuncinya agar persisten)
+    localStorage.setItem('viora_auth_status', 'true');
+    localStorage.setItem('viora_auth_user', loginData.value.username);
+    // Jika pakai Token Django: localStorage.setItem('access_token', response.data.access);
+    
+    isLoginOpen.value = false; 
+    loginData.value = { username: '', password: '' };
+    
+  } catch (error) {
+    loginError.value = error.response?.data?.detail || 'Invalid username or password.';
+    console.error(error);
+  } finally {
+    isLoggingIn.value = false;
+  }
+};
+
+const handleLogout = () => {
+  isLoggedIn.value = false;
+  currentUser.value = { username: '' };
+  isProfileOpen.value = false;
+  
+  // HAPUS DARI LOCALSTORAGE
+  localStorage.removeItem('viora_auth_status');
+  localStorage.removeItem('viora_auth_user');
+  // localStorage.removeItem('access_token');
+};
+
+// Fungsi ini akan dipanggil saat halaman pertama kali di-load
+const checkLoginStatus = () => {
+  const isAuth = localStorage.getItem('viora_auth_status');
+  const user = localStorage.getItem('viora_auth_user');
+  
+  // Jika ditemukan data di localStorage, pulihkan state-nya
+  if (isAuth === 'true' && user) {
+    isLoggedIn.value = true;
+    currentUser.value = { username: user };
+  }
+};
+
+
 let ticking = false;
 const handleScroll = () => {
   if (!ticking) {
@@ -120,8 +205,13 @@ const handleScroll = () => {
     ticking = true;
   }
 };
+
 const handleKeydown = (e) => {
-  if (e.key === 'Escape' && isSearchOpen.value) toggleSearch();
+  if (e.key === 'Escape') {
+    if (isSearchOpen.value) toggleSearch();
+    if (isLoginOpen.value) isLoginOpen.value = false;
+    if (isProfileOpen.value) isProfileOpen.value = false;
+  }
 };
 
 const startHeroCarousel = () => {
@@ -131,6 +221,9 @@ const startHeroCarousel = () => {
 };
 
 onMounted(() => {
+  // Panggil fungsi cek localStorage saat halaman dimuat
+  checkLoginStatus();
+  
   fetchAllData();
   window.addEventListener('scroll', handleScroll);
   window.addEventListener('keydown', handleKeydown);
@@ -146,9 +239,9 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
-   <Transition name="fade">
-      <div v-if="isSearchOpen" class="fixed inset-0 z-[100] bg-black/70  flex justify-center items-start pt-[12vh]" @click.self="toggleSearch">
-        <div class="w-full max-w-2xl bg-[#18181b]/80  border border-white/10 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] overflow-hidden flex flex-col mx-4 transform transition-all">
+    <Transition name="fade">
+      <div v-if="isSearchOpen" class="fixed inset-0 z-[100] bg-black/70 flex justify-center items-start pt-[12vh]" @click.self="toggleSearch">
+        <div class="w-full max-w-2xl bg-[#18181b]/80 border border-white/10 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] overflow-hidden flex flex-col mx-4 transform transition-all backdrop-blur-xl">
           
           <div class="flex items-center px-5 py-4 border-b border-white/10 bg-black/20">
             <Search class="w-6 h-6 text-gray-400 mr-4" />
@@ -167,7 +260,6 @@ onUnmounted(() => {
           </div>
 
           <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2">
-            
             <div v-if="isSearching" class="p-10 flex flex-col items-center justify-center gap-3">
               <Loader2 class="w-8 h-8 animate-spin text-blue-500" />
               <span class="text-sm text-gray-400 font-medium animate-pulse">Searching the universe...</span>
@@ -179,33 +271,112 @@ onUnmounted(() => {
             </div>
 
             <div v-else class="space-y-1 p-1">
-              <div 
-                v-for="item in searchResults" 
-                :key="item.id" 
-                class="flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl cursor-pointer transition-colors group"
-              >
+              <div v-for="item in searchResults" :key="item.id" class="flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl cursor-pointer transition-colors group">
                 <div class="w-14 h-20 bg-white/5 rounded-md overflow-hidden flex-shrink-0 shadow-md">
                   <img :src="getImageUrl(item.poster_path || item.backdrop_path, 'w185')" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 </div>
-                
                 <div class="flex-1 min-w-0">
-                  <h4 class="text-white font-bold text-lg leading-tight group-hover:text-blue-500 transition-colors truncate">
-                    {{ item.title || item.name }}
-                  </h4>
+                  <h4 class="text-white font-bold text-lg leading-tight group-hover:text-blue-500 transition-colors truncate">{{ item.title || item.name }}</h4>
                   <div class="flex items-center gap-3 text-xs text-gray-400 mt-2 font-medium">
                     <span class="bg-white/10 px-2 py-0.5 rounded text-white tracking-wide">{{ item.media_type === 'tv' ? 'Series' : 'Movie' }}</span>
                     <span>{{ (item.release_date || item.first_air_date)?.substring(0,4) }}</span>
                     <span class="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded"><Star class="w-3 h-3 fill-current"/> {{ item.vote_average?.toFixed(1) }}</span>
                   </div>
                 </div>
-                
                 <div class="w-10 h-10 rounded-full flex items-center justify-center group-hover:bg-white/10 transition-colors">
                   <Play class="w-5 h-5 text-gray-400 group-hover:text-white" />
                 </div>
               </div>
             </div>
-
           </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="fade">
+      <div v-if="isLoginOpen" class="fixed inset-0 z-[100] bg-black/70 flex justify-center items-center p-4" @click.self="isLoginOpen = false">
+        <div class="w-full max-w-md bg-[#2b2b30]/40 border border-white/10 rounded-[2rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] p-8 transform transition-all relative backdrop-blur-sm">
+          
+          <button @click="isLoginOpen = false" class="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-full transition-colors">
+            <X class="w-5 h-5 text-gray-400" />
+          </button>
+
+          <div class="text-center mb-8">
+            <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] mx-auto mb-4 shadow-lg shadow-blue-500/20">
+              <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center">
+                 <UserIcon class="w-8 h-8 text-white" />
+              </div>
+            </div>
+            <h2 class="text-3xl font-black tracking-tighter text-white">Welcome Back</h2>
+            <p class="text-sm text-gray-400 mt-1">Sign in to your Viora account</p>
+          </div>
+
+          <form @submit.prevent="handleLogin" class="space-y-5">
+            <div>
+              <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Username</label>
+              <input 
+                id="viora-username-input"
+                v-model="loginData.username" 
+                type="text" 
+                class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                placeholder="Enter your username"
+                required
+              />
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">Password</label>
+                <a href="#" class="text-xs text-blue-500 hover:text-blue-400 font-medium">Forgot?</a>
+              </div>
+              <input 
+                v-model="loginData.password" 
+                type="password" 
+                class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+
+            <div v-if="loginError" class="text-red-400 text-sm font-medium text-center bg-red-500/10 py-3 rounded-xl border border-red-500/20">
+              {{ loginError }}
+            </div>
+
+            <Button type="submit" :disabled="isLoggingIn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold h-14 rounded-xl transition-all shadow-lg shadow-blue-600/20 mt-2 flex justify-center items-center">
+              <Loader2 v-if="isLoggingIn" class="w-5 h-5 animate-spin mr-2" />
+              {{ isLoggingIn ? 'Authenticating...' : 'Sign In' }}
+            </Button>
+          </form>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="fade">
+      <div v-if="isProfileOpen" class="fixed inset-0 z-[95] bg-transparent" @click.self="isProfileOpen = false">
+        <div class="absolute top-[80px] right-6 lg:right-12 w-64 bg-[#18181b]/90 border border-white/10 rounded-2xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8)] p-2 transform transition-all">
+          
+          <div class="flex items-center gap-3 p-3 mb-2 border-b border-white/10">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] shadow-sm">
+              <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center font-bold text-sm">
+                {{ currentUser.username.charAt(0).toUpperCase() }}
+              </div>
+            </div>
+            <div class="flex-1 min-w-0">
+              <h4 class="text-white font-bold text-sm truncate">@{{ currentUser.username }}</h4>
+              <p class="text-xs text-blue-400 font-medium">Premium Member</p>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+             <button class="w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left">
+              <Settings class="w-4 h-4 text-gray-400" />
+              Account Settings
+            </button>
+            <button @click="handleLogout" class="w-full flex items-center gap-3 p-2.5 text-sm font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-colors text-left mt-1">
+              <LogOut class="w-4 h-4" />
+              Log Out
+            </button>
+          </div>
+          
         </div>
       </div>
     </Transition>
@@ -222,9 +393,10 @@ onUnmounted(() => {
         <span class="text-blue-500">.</span>
       </h1>
 
-      <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] cursor-pointer hover:scale-110 transition-transform shadow-lg shadow-blue-500/20">
+      <div @click="handleUserIconClick" class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] cursor-pointer hover:scale-110 transition-transform shadow-lg shadow-blue-500/20 z-[96]">
         <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center">
-           <UserIcon class="w-5 h-5" />
+           <span v-if="isLoggedIn" class="font-bold text-sm text-white">{{ currentUser.username.charAt(0).toUpperCase() }}</span>
+           <UserIcon v-else class="w-5 h-5" />
         </div>
       </div>
     </header>
@@ -320,7 +492,7 @@ bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 t
     </div>
 
     <nav class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-      <div class="flex items-center gap-2 px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]  border border-white/10 rounded-full shadow-lg ">
+      <div class="flex items-center gap-2 px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]  rounded-full ">
         <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
           <Home class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
         </div>
@@ -358,9 +530,9 @@ bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 t
 .hero-fade-enter-from { opacity: 0; transform: translateY(20px); }
 .hero-fade-leave-to { opacity: 0; transform: translateY(-20px); }
 
-/* Transisi untuk Spotlight Overlay */
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
-.fade-enter-from, .fade-leave-to { opacity: 0; transform: scale(0.98) translateY(-10px); }
+/* Transisi untuk Overlay Pop-up & Panel */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; transform: scale(0.98) translateY(-5px); }
 
 /* Custom scrollbar */
 .hide-scrollbar::-webkit-scrollbar {
