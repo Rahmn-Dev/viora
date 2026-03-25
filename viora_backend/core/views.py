@@ -7,37 +7,72 @@ from .models import WatchHistory # Sesuaikan dengan nama file models-mu
 from .models import Watchlist
 
 class UpdateWatchHistoryView(APIView):
-    # Wajib login agar kita tahu siapa usernya dari Token JWT
     permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        histories = WatchHistory.objects.filter(user=request.user)
+
+        data = [
+            {
+                "tmdb_id": item.tmdb_id,
+                "media_type": item.media_type,
+                "progress_percentage": item.progress_percentage,
+                "current_time_seconds": item.current_time_seconds,
+                "total_duration": item.total_duration,
+                "is_finished": item.is_finished
+            }
+            for item in histories
+        ]
+
+        return Response(data)
 
     def post(self, request):
         print(request.data)
-        # Ambil data yang dikirim dari Vue
+
         tmdb_id = request.data.get('tmdb_id')
         media_type = request.data.get('media_type')
         progress = request.data.get('progress_percentage', 0.0)
+        current_time = request.data.get('current_time_seconds', 0)
+        duration = request.data.get('total_duration', None)
 
-        # Validasi sederhana
+        is_finished = False
+        if duration and current_time:
+            is_finished = current_time >= duration * 0.95
+
         if not tmdb_id or not media_type:
             return Response(
                 {'error': 'tmdb_id and media_type are required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Logika Inti: Kalau belum pernah nonton, buat baru (Create).
-        # Kalau sudah pernah nonton, update progress-nya (Update).
         history, created = WatchHistory.objects.update_or_create(
             user=request.user,
             tmdb_id=tmdb_id,
             media_type=media_type,
-            defaults={'progress_percentage': progress}
+            defaults={
+                'progress_percentage': progress,
+                'current_time_seconds': current_time,
+                'total_duration': duration,
+                'is_finished': is_finished
+            }
         )
 
         return Response({
             'message': 'Watch progress saved successfully!',
             'progress': history.progress_percentage
         }, status=status.HTTP_200_OK)
+    def delete(self, request):
+        tmdb_id = request.data.get('tmdb_id')
+        media_type = request.data.get('media_type')
 
+        WatchHistory.objects.filter(
+            user=request.user,
+            tmdb_id=tmdb_id,
+            media_type=media_type
+        ).delete()
+
+        return Response({"status": "deleted"})
+    
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_watchlist(request):
@@ -82,3 +117,4 @@ def toggle_watchlist(request):
         return Response({"status": "removed"})
 
     return Response({"status": "added"})
+

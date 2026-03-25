@@ -4,6 +4,9 @@ from django.contrib.auth.models import User
 class WatchHistory(models.Model): # <-- Diperbaiki dari models.fields
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='watch_history')
     tmdb_id = models.IntegerField()
+    current_time_seconds = models.FloatField(default=0)
+    total_duration = models.FloatField(null=True, blank=True)
+    is_finished = models.BooleanField(default=False)
     media_type = models.CharField(max_length=10, choices=[('movie', 'Movie'), ('tv', 'TV Show')])
     progress_percentage = models.FloatField(default=0.0)
     updated_at = models.DateTimeField(auto_now=True)

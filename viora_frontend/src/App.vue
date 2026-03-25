@@ -68,35 +68,52 @@ const enrichMoviesWithLogos = async (movies) => {
 // Fungsi Mengambil Data Personal User (History & Watchlist) dari Backend
 const fetchUserData = async () => {
   if (!isLoggedIn.value) return;
+
   try {
-    // 1. Ambil Watch History dari Django
-    // const historyRes = await axios.get('http://localhost:8000/api/watch-history/');
-    // Simulasi Response History: [{ tmdb_id: 299534, media_type: 'movie', progress_percentage: 65.5 }, ...]
-    const simulatedHistory = []; // Ganti dengan historyRes.data jika backend sudah jalan
-    
-    if (simulatedHistory.length > 0) {
-      const historyDetails = await Promise.all(simulatedHistory.map(async (item) => {
-        const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
-        return { ...tmdbRes.data, media_type: item.media_type, progress_percentage: item.progress_percentage };
-      }));
+    // ✅ AMBIL DATA DARI DJANGO
+    const historyRes = await axios.get('/api/watch-history/');
+    const historyData = historyRes.data;
+
+    console.log("🔥 history:", historyData);
+
+    if (historyData.length > 0) {
+      const historyDetails = await Promise.all(
+        historyData.map(async (item) => {
+          const tmdbRes = await axios.get(
+            `${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`
+          );
+
+          return {
+            ...tmdbRes.data,
+            media_type: item.media_type,
+            progress_percentage: item.progress_percentage
+          };
+        })
+      );
+
       watchHistoryMovies.value = await enrichMoviesWithLogos(historyDetails);
     }
 
-    // 2. Ambil Watchlist dari Django
-    // const watchlistRes = await axios.get('http://localhost:8000/api/watchlist/');
-    // Simulasi Response Watchlist: [{ tmdb_id: 157336, media_type: 'movie' }]
-    const simulatedWatchlist = []; // Ganti dengan watchlistRes.data
-    
-    if (simulatedWatchlist.length > 0) {
-      const watchlistDetails = await Promise.all(simulatedWatchlist.map(async (item) => {
-        watchlist.value.add(item.tmdb_id); // Sinkronkan Set UI
-        const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
-        return { ...tmdbRes.data, media_type: item.media_type };
-      }));
-      watchlistMovies.value = await enrichMoviesWithLogos(watchlistDetails);
-    }
   } catch (error) {
-    console.error("Failed to fetch user data:", error);
+    console.error("❌ Failed to fetch history:", error);
+  }
+};
+const handleRemoveHistory = async (movie) => {
+  try {
+    await axios.delete('/api/watch-history/', {
+      data: {
+        tmdb_id: movie.id,
+        media_type: movie.media_type
+      }
+    });
+
+    // 🔥 langsung update UI
+    watchHistoryMovies.value = watchHistoryMovies.value.filter(
+      m => m.id !== movie.id
+    );
+
+  } catch (err) {
+    console.error("❌ Failed remove history", err);
   }
 };
 
@@ -337,14 +354,23 @@ const checkLoginStatus = () => {
 const openPlayer = (movie) => {
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
   currentMedia.value = movie;
-  
-  if (type === 'movie') {
-    embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true`;
-  } else {
-    embedUrl.value = `https://www.vidking.net/embed/tv/${movie.id}/1/1?autoPlay=true&nextEpisode=true&episodeSelector=true`;
+
+  let startTime = 0;
+
+  // 🔥 cari progress dari history
+  const history = watchHistoryMovies.value.find(m => m.id === movie.id);
+  if (history && history.current_time_seconds) {
+    startTime = Math.floor(history.current_time_seconds);
   }
-  
+
+  if (type === 'movie') {
+    embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true&t=${startTime}`;
+  } else {
+    embedUrl.value = `https://www.vidking.net/embed/tv/${movie.id}/1/1?autoPlay=true&t=${startTime}`;
+  }
+
   isPlayerOpen.value = true;
+
   if(heroTimer) clearInterval(heroTimer); 
 };
 
@@ -353,6 +379,7 @@ const closePlayer = () => {
   embedUrl.value = '';
   currentMedia.value = null;
   startHeroCarousel(); 
+  fetchUserData();
 };
 
 let lastSaveTime = 0;
@@ -369,11 +396,17 @@ const handlePlayerMessage = async (event) => {
        if (playerEvent === 'pause' || playerEvent === 'ended' || (playerEvent === 'timeupdate' && now - lastSaveTime > 10000)) {
          lastSaveTime = now; 
          try {
-           // await axios.post('http://localhost:8000/api/watch-history/', {
-           //   tmdb_id: id, media_type: mediaType, season: season || null, episode: episode || null,
-           //   progress_percentage: progress, current_time_seconds: currentTime, total_duration: duration,
-           //   is_finished: playerEvent === 'ended'
-           // });
+           await axios.post('/api/watch-history/', {
+              tmdb_id: id,
+              media_type: mediaType,
+              season: season || null,
+              episode: episode || null,
+              progress_percentage: progress,
+              current_time_seconds: currentTime,
+              total_duration: duration,
+              is_finished: playerEvent === 'ended'
+            });
+            await fetchUserData()
            console.log(`Progress saved to DB! (${progress.toFixed(1)}%)`);
          } catch (e) { console.error('Failed to save progress', e); }
        }
@@ -451,7 +484,7 @@ onUnmounted(() => {
             <X class="w-6 h-6 text-white" />
           </button>
           
-          <h2 class="text-4xl font-black mb-10 tracking-tight uppercase italic flex items-center gap-4">
+          <h2 class="text-4xl font-black mb-10 tracking-tight   flex items-center gap-4">
             <span class="w-2 h-10 bg-blue-500 rounded-full"></span>
             My <span class="text-blue-500">Watchlist</span>
           </h2>
@@ -658,36 +691,92 @@ onUnmounted(() => {
 
       <main class="relative z-20 -mt-20 space-y-10 pb-20">
         
-        <section v-if="isLoggedIn && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
-          <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 ">
+       <section v-if="isLoggedIn && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
+          <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
-          
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-20px_40px_rgba(59,130,246,0.08)] transition-shadow duration-500" style="padding-bottom: 20px; padding-top: 20px;">
-            <div 
-              v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)"
-              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
-            >
-              <img :src="getImageUrl(movie.backdrop_path, 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
 
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4">
+            
+            <div 
+              v-for="movie in watchHistoryMovies" 
+              :key="movie.id"
+              @click="openPlayer(movie)"
+              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] group cursor-pointer transition-all hover:scale-110 hover:-translate-y-2 hover:z-40"
+            >
+
+              <img 
+                :src="getImageUrl(movie.backdrop_path, 'w780')" 
+                class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition duration-700 group-hover:scale-105" 
+              />
+
+              <!-- 🔥 INFO (SAMA KAYA TRENDING) -->
               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent p-5 flex flex-col justify-end">
+                
                 <div class="mb-2">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                  <h4 v-else class="text-sm md:text-base font-black uppercase italic tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
+                  <img v-if="movie.logo_path" 
+                    :src="getImageUrl(movie.logo_path, 'w300')" 
+                    class="max-w-[140px] max-h-[45px] object-contain" 
+                  />
+                  <h4 v-else class="text-sm font-black line-clamp-1">
+                    {{ movie.title || movie.name }}
+                  </h4>
+                </div>
+
+                <!-- 🔥 META -->
+                <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+                  <div class="bg-[#f5c518] text-black px-1.5 py-0.5 rounded">
+                    IMDb {{ movie.vote_average?.toFixed(1) }}
+                  </div>
+                  <span>
+                    {{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}
+                  </span>
+                  <div class="bg-[#E97451]/90 text-white px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px]">
+                    <Flame class="w-3 h-3" />
+                    <span>{{ movie.vote_count }}</span>
+                  </div>
+                </div>
+
+              </div>
+
+              <!-- 🔥 PROGRESS BAR -->
+              <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80">
+                <div 
+                  class="h-full bg-blue-500"
+                  :style="{ width: (movie.progress_percentage || 0) + '%' }"
+                ></div>
+              </div>
+
+              <!-- 🔥 PLAY BUTTON -->
+              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <div class="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center border border-white/30">
+                  <Play class="w-6 h-6 text-white fill-current" />
                 </div>
               </div>
-              
-              <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80 overflow-hidden z-10">
-                <div class="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.8)]" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
+
+              <!-- 🔥 WATCHLIST BUTTON -->
+              <div class="absolute top-3 right-12 z-20">
+                <button 
+                  @click.stop="handleWatchlistToggle(movie, movie.media_type)"
+                  class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20"
+                >
+                  <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
+                  <Plus v-else class="w-4 h-4 text-white" />
+                </button>
               </div>
 
-              <div class="absolute inset-0 rounded-2xl pointer-events-none bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                 <div class="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
-                    <Play class="w-6 h-6 text-white fill-current" />
-                 </div>
+              <!-- 🔥 CLOSE BUTTON (HAPUS HISTORY) -->
+              <div class="absolute top-3 right-3 z-20">
+                <button 
+                  @click.stop="handleRemoveHistory(movie)"
+                  class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20"
+                >
+                  <X class="w-4 h-4 text-white" />
+                </button>
               </div>
+
             </div>
+
           </div>
         </section>
 
