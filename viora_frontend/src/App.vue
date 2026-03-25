@@ -351,30 +351,35 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
-  <Transition name="fade">
+ <Transition name="fade">
       <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-10 transition-opacity hover:opacity-100 opacity-0 duration-300">
-           <div class="flex items-center gap-6">
-              <button @click="closePlayer" class="p-2 bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-md transition-all text-white">
-                 <X class="w-6 h-6" />
-              </button>
-              
+        
+        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
+           
+           <div>
               <img 
                 v-if="currentMedia?.logo_path" 
                 :src="getImageUrl(currentMedia.logo_path, 'w300')" 
                 class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg origin-left" 
                 :alt="currentMedia?.title || currentMedia?.name"
               />
-              <h2 v-else class="text-xl md:text-2xl font-black uppercase italic tracking-tighter drop-shadow-md">
+              <h2 v-else class="text-xl md:text-2xl font-black uppercase italic tracking-tighter drop-shadow-md text-white">
                 {{ currentMedia?.title || currentMedia?.name }}
               </h2>
-              
            </div>
+
+           <div class="pointer-events-auto group w-200 h-33 flex justify-end items-start -mt-2 -mr-1">
+              <button @click="closePlayer" class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer">
+                 <X class="w- h-6" />
+              </button>
+           </div>
+
         </div>
 
         <div v-if="embedUrl" class="w-full h-full">
             <iframe :src="embedUrl" width="100%" height="100%" frameborder="0" allowfullscreen class="w-full h-full"></iframe>
         </div>
+
       </div>
     </Transition>
 
