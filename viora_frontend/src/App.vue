@@ -1,41 +1,28 @@
 <script setup>
 axios.defaults.baseURL = 'http://localhost:8000';
 
-
 axios.interceptors.response.use(
   res => res,
   async (err) => {
     const status = err.response?.status;
-
     if (status === 401 && !err.config._retry) {
       err.config._retry = true;
-
       const refresh = localStorage.getItem('refresh_token');
-
       if (!refresh) {
         handleLogout();
         return Promise.reject(err);
       }
-
       try {
-        const res = await axios.post('/api/token/refresh/', {
-          refresh: refresh
-        });
-
+        const res = await axios.post('/api/token/refresh/', { refresh: refresh });
         const newAccess = res.data.access;
-
         localStorage.setItem('access_token', newAccess);
-
         axios.defaults.headers.common['Authorization'] = `Bearer ${newAccess}`;
         err.config.headers['Authorization'] = `Bearer ${newAccess}`;
-
         return axios(err.config);
-
       } catch (e) {
-        handleLogout(); // 🔥 auto logout
+        handleLogout(); 
       }
     }
-
     return Promise.reject(err);
   }
 );
@@ -53,14 +40,12 @@ const isLoading = ref(true);
 const isScrolled = ref(false);
 let heroTimer = null;
 
-// Search State
 const isSearchOpen = ref(false);
 const searchQuery = ref('');
 const searchResults = ref([]);
 const isSearching = ref(false);
 let searchTimeout = null;
 
-// Auth & Profile State
 const isLoggedIn = ref(false);
 const currentUser = ref({ username: '' });
 const isLoginOpen = ref(false);
@@ -69,18 +54,18 @@ const loginData = ref({ username: '', password: '' });
 const isLoggingIn = ref(false);
 const loginError = ref('');
 
-// --- VIDEO PLAYER STATE ---
 const isPlayerOpen = ref(false);
 const currentMedia = ref(null); 
 const embedUrl = ref('');
 
-// --- USER DATA STATE (History & Watchlist) ---
-const watchHistoryMovies = ref([]); // Menyimpan data continue watching
-const watchlistMovies = ref([]); // Menyimpan detail film watchlist untuk overlay
-const isWatchlistOpen = ref(false); // State untuk buka/tutup panel My Watchlist
+const watchHistoryMovies = ref([]); 
+const watchlistMovies = ref([]); 
+const isWatchlistOpen = ref(false); 
 const watchlist = ref(new Set()); 
 
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
+// MENGAMBIL KEY WYZIE DARI .ENV
+const WYZIE_API_KEY = import.meta.env.VITE_WYZIE_API_KEY; 
 const BASE_URL = 'https://api.themoviedb.org/3';
 
 const getImageUrl = (path, width = 'w780') => {
@@ -104,56 +89,28 @@ const enrichMoviesWithLogos = async (movies) => {
   }));
 };
 
-// Fungsi Mengambil Data Personal User (History & Watchlist) dari Backend
 const fetchUserData = async () => {
   if (!isLoggedIn.value) return;
-
   try {
-    // ✅ AMBIL DATA DARI DJANGO
     const historyRes = await axios.get('/api/watch-history/');
     const historyData = historyRes.data;
-
-    console.log("🔥 history:", historyData);
-
     if (historyData.length > 0) {
       const historyDetails = await Promise.all(
         historyData.map(async (item) => {
-          const tmdbRes = await axios.get(
-            `${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`
-          );
-
-          return {
-            ...tmdbRes.data,
-            media_type: item.media_type,
-            progress_percentage: item.progress_percentage
-          };
+          const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
+          return { ...tmdbRes.data, media_type: item.media_type, progress_percentage: item.progress_percentage };
         })
       );
-
       watchHistoryMovies.value = await enrichMoviesWithLogos(historyDetails);
     }
-
-  } catch (error) {
-    console.error("❌ Failed to fetch history:", error);
-  }
+  } catch (error) { console.error("❌ Failed to fetch history:", error); }
 };
+
 const handleRemoveHistory = async (movie) => {
   try {
-    await axios.delete('/api/watch-history/', {
-      data: {
-        tmdb_id: movie.id,
-        media_type: movie.media_type
-      }
-    });
-
-    // 🔥 langsung update UI
-    watchHistoryMovies.value = watchHistoryMovies.value.filter(
-      m => m.id !== movie.id
-    );
-
-  } catch (err) {
-    console.error("❌ Failed remove history", err);
-  }
+    await axios.delete('/api/watch-history/', { data: { tmdb_id: movie.id, media_type: movie.media_type }});
+    watchHistoryMovies.value = watchHistoryMovies.value.filter(m => m.id !== movie.id);
+  } catch (err) { console.error("❌ Failed remove history", err); }
 };
 
 const fetchAllData = async () => {
@@ -166,29 +123,17 @@ const fetchAllData = async () => {
     ]);
 
     heroMovies.value = await enrichMoviesWithLogos(trending.data.results.slice(0, 5));
-
     const categoriesData = [
       { id: 1, title: 'Trending Now', raw: trending.data.results.slice(5, 15) },
       { id: 2, title: 'Top Rated Movies', raw: topRated.data.results.slice(0, 10) },
       { id: 3, title: 'Action Thriller', raw: action.data.results.slice(0, 10) },
       { id: 4, title: 'Animation Series', raw: animation.data.results.slice(0, 10) },
     ];
-
-    movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({
-      id: cat.id,
-      title: cat.title,
-      movies: await enrichMoviesWithLogos(cat.raw)
-    })));
-
+    movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({ id: cat.id, title: cat.title, movies: await enrichMoviesWithLogos(cat.raw) })));
     startHeroCarousel();
-  } catch (error) { 
-    console.error(error); 
-  } finally { 
-    isLoading.value = false; 
-  }
+  } catch (error) { console.error(error); } finally { isLoading.value = false; }
 };
 
-// --- Fungsi Toggle Overlay Navigasi ---
 const toggleSearch = () => {
   if (isLoginOpen.value) isLoginOpen.value = false;
   if (isProfileOpen.value) isProfileOpen.value = false;
@@ -199,10 +144,7 @@ const toggleSearch = () => {
 
 const toggleWatchlist = () => {
   checkLoginStatus()
-  if (!isLoggedIn.value) {
-    isLoginOpen.value = true;
-    return;
-  }
+  if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   if (isSearchOpen.value) isSearchOpen.value = false;
   if (isProfileOpen.value) isProfileOpen.value = false;
   isWatchlistOpen.value = !isWatchlistOpen.value;
@@ -211,7 +153,6 @@ const toggleWatchlist = () => {
 const handleUserIconClick = () => {
   if (isSearchOpen.value) isSearchOpen.value = false;
   if (isWatchlistOpen.value) isWatchlistOpen.value = false;
-  
   if (isLoggedIn.value) {
     isProfileOpen.value = !isProfileOpen.value;
     if (isLoginOpen.value) isLoginOpen.value = false;
@@ -222,33 +163,17 @@ const handleUserIconClick = () => {
 };
 
 const handleWatchlistToggle = async (movie, type = null) => {
-  if (!isLoggedIn.value) {
-    isLoginOpen.value = true;
-    return;
-  }
-
+  if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const mediaType = type || movie.media_type || 'movie';
-
   try {
     const res = await axios.post('/api/watchlist/toggle/', {
-      tmdb_id: movie.id,
-      media_type: mediaType,
-      title: movie.title || movie.name,
-      poster_path: movie.poster_path,
-      backdrop_path: movie.backdrop_path,
-      rating: movie.vote_average,
-      year: (movie.release_date || movie.first_air_date)?.substring(0, 4)
+      tmdb_id: movie.id, media_type: mediaType, title: movie.title || movie.name,
+      poster_path: movie.poster_path, backdrop_path: movie.backdrop_path,
+      rating: movie.vote_average, year: (movie.release_date || movie.first_air_date)?.substring(0, 4)
     });
-
-    if (res.data.status === "added") {
-      watchlist.value.add(movie.id);
-    } else {
-      watchlist.value.delete(movie.id);
-    }
-
-  } catch (err) {
-    console.error("❌ Failed to update watchlist", err);
-  }
+    if (res.data.status === "added") { watchlist.value.add(movie.id); } 
+    else { watchlist.value.delete(movie.id); }
+  } catch (err) { console.error("❌ Failed to update watchlist", err); }
 };
 
 const performSearch = async () => {
@@ -257,77 +182,45 @@ const performSearch = async () => {
   try {
     const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false`);
     searchResults.value = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv').slice(0, 6);
-  } catch (error) { console.error(error); } 
-  finally { isSearching.value = false; }
+  } catch (error) { console.error(error); } finally { isSearching.value = false; }
 };
 
 const onSearchInput = () => {
   clearTimeout(searchTimeout);
   searchTimeout = setTimeout(performSearch, 500);
 };
+
 const fetchWatchlist = async () => {
   try {
     const res = await axios.get('/api/watchlist/');
-
-    // 🔥 convert ke Set biar bisa .has()
     watchlist.value = new Set(res.data.map(item => item.id));
-
-    // 🔥 simpan full data buat UI
     watchlistMovies.value = res.data;
-
-    console.log("watchlist:", res.data);
-
-  } catch (err) {
-    console.error("gagal ambil watchlist", err);
-  }
+  } catch (err) { console.error("gagal ambil watchlist", err); }
 };
 
-
 const handleLogin = async () => {
-  if (!loginData.value.username || !loginData.value.password) {
-    loginError.value = 'Please fill in all fields.';
-    return;
-  }
-
+  if (!loginData.value.username || !loginData.value.password) { loginError.value = 'Please fill in all fields.'; return; }
   isLoggingIn.value = true;
   loginError.value = '';
-
   try {
-    const response = await axios.post('/api/login/', {
-      username: loginData.value.username,
-      password: loginData.value.password
-    });
-
+    const response = await axios.post('/api/login/', { username: loginData.value.username, password: loginData.value.password });
     const accessToken = response.data.access;
     const refreshToken = response.data.refresh;
-
-    // ✅ SIMPAN TOKEN
     localStorage.setItem('access_token', accessToken);
     localStorage.setItem('refresh_token', refreshToken);
-
-    // ✅ SET HEADER GLOBAL (INI YANG BIKIN API GA 401)
     axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
-
-    // ✅ SET STATE
     isLoggedIn.value = true;
     currentUser.value = { username: loginData.value.username };
-
     localStorage.setItem('viora_auth_status', 'true');
     localStorage.setItem('viora_auth_user', loginData.value.username);
-
-    // ✅ FETCH DATA USER
     await fetchUserData();
     await fetchWatchlist();
-
     isLoginOpen.value = false;
     loginData.value = { username: '', password: '' };
-
   } catch (error) {
     console.error(error);
     loginError.value = error.response?.data?.detail || 'Login failed.';
-  } finally {
-    isLoggingIn.value = false;
-  }
+  } finally { isLoggingIn.value = false; }
 };
 
 const handleLogout = () => {
@@ -338,23 +231,19 @@ const handleLogout = () => {
   watchHistoryMovies.value = [];
   watchlistMovies.value = [];
   watchlist.value.clear();
-  
   localStorage.removeItem('viora_auth_status');
   localStorage.removeItem('viora_auth_user');
   localStorage.removeItem('access_token');
   delete axios.defaults.headers.common['Authorization'];
 };
+
 const checkLoginStatus = () => {
   const token = localStorage.getItem('access_token');
   const user = localStorage.getItem('viora_auth_user');
-
   if (token && user) {
     isLoggedIn.value = true;
     currentUser.value = { username: user };
-
-    // ✅ SET HEADER LAGI SAAT REFRESH
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
     fetchUserData();
     fetchWatchlist(); 
   }
@@ -362,15 +251,9 @@ const checkLoginStatus = () => {
 
 // --- FUNGSI VIDEO PLAYER ---
 const openPlayer = (movie) => {
-  // 🚫 CEK LOGIN DULU
-  if (!isLoggedIn.value) {
-    isLoginOpen.value = true;
-    return;
-  }
-
+  if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
   currentMedia.value = movie;
-
   let startTime = 0;
 
   const history = watchHistoryMovies.value.find(m => m.id === movie.id);
@@ -378,14 +261,15 @@ const openPlayer = (movie) => {
     startTime = Math.floor(history.current_time_seconds);
   }
 
+  // MENYISIPKAN KEY WYZIE UNTUK SUBTITLE
+  // Menggunakan fallback language: "id,en" agar ada opsi Indonesia, lalu Inggris
   if (type === 'movie') {
-    embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true&t=${startTime}&lan&key=${API_KEY}`;
+    embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
   } else {
-    embedUrl.value = `https://www.vidking.net/embed/tv/${movie.id}/1/1?autoPlay=true&t=${startTime}`;
+    embedUrl.value = `https://www.vidking.net/embed/tv/${movie.id}/1/1?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
   }
 
   isPlayerOpen.value = true;
-
   if(heroTimer) clearInterval(heroTimer); 
 };
 
@@ -403,26 +287,17 @@ const handlePlayerMessage = async (event) => {
     const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
     if (message && message.type === 'PLAYER_EVENT') {
        const { event: playerEvent, progress, currentTime, duration, id, mediaType, season, episode } = message.data;
-       
        if (!isLoggedIn.value) return;
        const now = Date.now();
-       
-       // Trigger save API (Pause, Beres nonton, atau per 10 detik)
        if (playerEvent === 'pause' || playerEvent === 'ended' || (playerEvent === 'timeupdate' && now - lastSaveTime > 3000)) {
          lastSaveTime = now; 
          try {
            await axios.post('/api/watch-history/', {
-              tmdb_id: id,
-              media_type: mediaType,
-              season: season || null,
-              episode: episode || null,
-              progress_percentage: progress,
-              current_time_seconds: currentTime,
-              total_duration: duration,
+              tmdb_id: id, media_type: mediaType, season: season || null, episode: episode || null,
+              progress_percentage: progress, current_time_seconds: currentTime, total_duration: duration,
               is_finished: playerEvent === 'ended'
             });
             await fetchUserData()
-           console.log(`Progress saved to DB! (${progress.toFixed(1)}%)`);
          } catch (e) { console.error('Failed to save progress', e); }
        }
     }
@@ -476,16 +351,27 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
-    <Transition name="fade">
+  <Transition name="fade">
       <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
         <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-10 transition-opacity hover:opacity-100 opacity-0 duration-300">
-           <div class="flex items-center gap-4">
+           <div class="flex items-center gap-6">
               <button @click="closePlayer" class="p-2 bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-md transition-all text-white">
                  <X class="w-6 h-6" />
               </button>
-              <h2 class="text-xl font-bold italic tracking-tighter">{{ currentMedia?.title || currentMedia?.name }}</h2>
+              
+              <img 
+                v-if="currentMedia?.logo_path" 
+                :src="getImageUrl(currentMedia.logo_path, 'w300')" 
+                class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg origin-left" 
+                :alt="currentMedia?.title || currentMedia?.name"
+              />
+              <h2 v-else class="text-xl md:text-2xl font-black uppercase italic tracking-tighter drop-shadow-md">
+                {{ currentMedia?.title || currentMedia?.name }}
+              </h2>
+              
            </div>
         </div>
+
         <div v-if="embedUrl" class="w-full h-full">
             <iframe :src="embedUrl" width="100%" height="100%" frameborder="0" allowfullscreen class="w-full h-full"></iframe>
         </div>
@@ -725,7 +611,6 @@ onUnmounted(() => {
                 class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition duration-700 group-hover:scale-105" 
               />
 
-              <!-- 🔥 INFO (SAMA KAYA TRENDING) -->
               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent p-5 flex flex-col justify-end">
                 
                 <div class="mb-2">
@@ -738,7 +623,6 @@ onUnmounted(() => {
                   </h4>
                 </div>
 
-                <!-- 🔥 META -->
                 <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
                   <div class="bg-[#f5c518] text-black px-1.5 py-0.5 rounded">
                     IMDb {{ movie.vote_average?.toFixed(1) }}
@@ -754,7 +638,6 @@ onUnmounted(() => {
 
               </div>
 
-              <!-- 🔥 PROGRESS BAR -->
               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80">
                 <div 
                   class="h-full bg-blue-500"
@@ -762,14 +645,12 @@ onUnmounted(() => {
                 ></div>
               </div>
 
-              <!-- 🔥 PLAY BUTTON -->
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
                 <div class="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center border border-white/30">
                   <Play class="w-6 h-6 text-white fill-current" />
                 </div>
               </div>
 
-              <!-- 🔥 WATCHLIST BUTTON -->
               <div class="absolute top-3 right-12 z-20">
                 <button 
                   @click.stop="handleWatchlistToggle(movie, movie.media_type)"
@@ -780,7 +661,6 @@ onUnmounted(() => {
                 </button>
               </div>
 
-              <!-- 🔥 CLOSE BUTTON (HAPUS HISTORY) -->
               <div class="absolute top-3 right-3 z-20">
                 <button 
                   @click.stop="handleRemoveHistory(movie)"
@@ -845,7 +725,7 @@ onUnmounted(() => {
     </div>
 
     <nav class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-      <div class="flex items-center gap-2 px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-full">
+      <div class="flex items-center gap-2 px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]  rounded-full ">
         <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
           <Home class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
         </div>
