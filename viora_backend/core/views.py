@@ -16,6 +16,8 @@ class UpdateWatchHistoryView(APIView):
             {
                 "tmdb_id": item.tmdb_id,
                 "media_type": item.media_type,
+                "season": item.season,
+                "episode": item.episode,
                 "progress_percentage": item.progress_percentage,
                 "current_time_seconds": item.current_time_seconds,
                 "total_duration": item.total_duration,
@@ -34,6 +36,8 @@ class UpdateWatchHistoryView(APIView):
         progress = request.data.get('progress_percentage', 0.0)
         current_time = request.data.get('current_time_seconds', 0)
         duration = request.data.get('total_duration', None)
+        season = request.data.get('season')
+        episode = request.data.get('episode')
 
         is_finished = False
         if duration and current_time:
@@ -51,6 +55,8 @@ class UpdateWatchHistoryView(APIView):
             media_type=media_type,
             defaults={
                 'progress_percentage': progress,
+                'season': season,
+                'episode': episode,
                 'current_time_seconds': current_time,
                 'total_duration': duration,
                 'is_finished': is_finished

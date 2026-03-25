@@ -4,6 +4,8 @@ from django.contrib.auth.models import User
 class WatchHistory(models.Model): # <-- Diperbaiki dari models.fields
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='watch_history')
     tmdb_id = models.IntegerField()
+    season = models.IntegerField(null=True, blank=True)
+    episode = models.IntegerField(null=True, blank=True)
     current_time_seconds = models.FloatField(default=0)
     total_duration = models.FloatField(null=True, blank=True)
     is_finished = models.BooleanField(default=False)

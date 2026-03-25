@@ -1,6 +1,45 @@
 <script setup>
 axios.defaults.baseURL = 'http://localhost:8000';
 
+
+axios.interceptors.response.use(
+  res => res,
+  async (err) => {
+    const status = err.response?.status;
+
+    if (status === 401 && !err.config._retry) {
+      err.config._retry = true;
+
+      const refresh = localStorage.getItem('refresh_token');
+
+      if (!refresh) {
+        handleLogout();
+        return Promise.reject(err);
+      }
+
+      try {
+        const res = await axios.post('/api/token/refresh/', {
+          refresh: refresh
+        });
+
+        const newAccess = res.data.access;
+
+        localStorage.setItem('access_token', newAccess);
+
+        axios.defaults.headers.common['Authorization'] = `Bearer ${newAccess}`;
+        err.config.headers['Authorization'] = `Bearer ${newAccess}`;
+
+        return axios(err.config);
+
+      } catch (e) {
+        handleLogout(); // 🔥 auto logout
+      }
+    }
+
+    return Promise.reject(err);
+  }
+);
+
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
 import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings } from 'lucide-vue-next';
 import axios from 'axios';
@@ -148,36 +187,7 @@ const fetchAllData = async () => {
     isLoading.value = false; 
   }
 };
-axios.interceptors.response.use(
-  res => res,
-  async (err) => {
-    if (err.response?.status === 401) {
-      const refresh = localStorage.getItem('refresh_token');
 
-      if (refresh) {
-        try {
-          const res = await axios.post('/api/token/refresh/', {
-            refresh: refresh
-          });
-
-          const newAccess = res.data.access;
-          localStorage.setItem('access_token', newAccess);
-
-          axios.defaults.headers.common['Authorization'] = `Bearer ${newAccess}`;
-
-          // retry request
-          err.config.headers['Authorization'] = `Bearer ${newAccess}`;
-          return axios(err.config);
-
-        } catch (e) {
-          handleLogout();
-        }
-      }
-    }
-
-    return Promise.reject(err);
-  }
-);
 // --- Fungsi Toggle Overlay Navigasi ---
 const toggleSearch = () => {
   if (isLoginOpen.value) isLoginOpen.value = false;
@@ -369,7 +379,7 @@ const openPlayer = (movie) => {
   }
 
   if (type === 'movie') {
-    embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true&t=${startTime}`;
+    embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true&t=${startTime}&lan&key=${API_KEY}`;
   } else {
     embedUrl.value = `https://www.vidking.net/embed/tv/${movie.id}/1/1?autoPlay=true&t=${startTime}`;
   }
@@ -398,7 +408,7 @@ const handlePlayerMessage = async (event) => {
        const now = Date.now();
        
        // Trigger save API (Pause, Beres nonton, atau per 10 detik)
-       if (playerEvent === 'pause' || playerEvent === 'ended' || (playerEvent === 'timeupdate' && now - lastSaveTime > 10000)) {
+       if (playerEvent === 'pause' || playerEvent === 'ended' || (playerEvent === 'timeupdate' && now - lastSaveTime > 3000)) {
          lastSaveTime = now; 
          try {
            await axios.post('/api/watch-history/', {
