@@ -27,11 +27,63 @@ axios.interceptors.response.use(
   }
 );
 
-import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
+import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
 import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+
+
+const mouseX = ref(0)
+const mouseY = ref(0)
+
+
+const activeIndex = ref(0)
+const hoverIndex = ref(null)
+const isAnimating = ref(false)
+const navRefs = ref([])
+
+const sliderStyle = computed(() => {
+  const index = hoverIndex.value ?? activeIndex.value
+  const isHovering = hoverIndex.value !== null
+
+  // fase squash (awal)
+  if (isAnimating.value) {
+    return {
+      transform: `translateX(${index * 56}px) scaleX(2) scaleY(0.2)`,
+      borderRadius: '15px'
+    }
+  }
+
+  // fase normal (setelah sampai)
+  return {
+    transform: `translateX(${index * 56}px) scaleX(${isHovering ? 1 : 0.9}) scaleY(0.8)`,
+    borderRadius: '20px'
+  }
+})
+const glassTransform = computed(() => {
+  const rotateX = mouseY.value * -5   // tilt atas bawah
+  const rotateY = mouseX.value * 5    // tilt kiri kanan
+  const translateX = mouseX.value * 10
+  const translateY = mouseY.value * 10
+
+  return {
+    transform: `
+      perspective(1000px)
+      rotateX(${rotateX}deg)
+      rotateY(${rotateY}deg)
+      translateX(${translateX}px)
+      translateY(${translateY}px)
+    `
+  }
+})
+const handleMouseMove = (e) => {
+  const x = (e.clientX / window.innerWidth - 0.5) * 2
+  const y = (e.clientY / window.innerHeight - 0.5) * 2
+
+  mouseX.value = x
+  mouseY.value = y
+}
 
 const heroMovies = ref([]);
 const currentHeroIndex = ref(0);
@@ -365,6 +417,8 @@ const toggleWatchlist = () => {
   isWatchlistOpen.value = !isWatchlistOpen.value;
 };
 
+
+
 const handleUserIconClick = () => {
   if (isSearchOpen.value) isSearchOpen.value = false;
   if (isWatchlistOpen.value) isWatchlistOpen.value = false;
@@ -568,8 +622,32 @@ const startHeroCarousel = () => {
     }
   }, 8000);
 };
+const navItems = [
+  { key: 'home', action: () => changeView('home') },
+  { key: 'search', action: toggleSearch },
+  { key: 'movie', action: () => changeView('movie') },
+  { key: 'tv', action: () => changeView('tv') },
+  { key: 'watchlist', action: toggleWatchlist }
+]
+
+
+watch(currentView, (val) => {
+  if (val === 'home') activeIndex.value = 0
+  if (val === 'movie') activeIndex.value = 2
+  if (val === 'tv') activeIndex.value = 3
+})
+watch(hoverIndex, () => {
+  if (hoverIndex.value !== null) {
+    isAnimating.value = true
+
+    setTimeout(() => {
+      isAnimating.value = false
+    }, 180) // durasi squash dulu
+  }
+})
 
 onMounted(() => {
+   window.addEventListener('mousemove', handleMouseMove)
   checkLoginStatus();
   fetchAllData();
   window.addEventListener('scroll', handleScroll);
@@ -578,6 +656,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener('mousemove', handleMouseMove)
   window.removeEventListener('scroll', handleScroll);
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('message', handlePlayerMessage);
@@ -926,37 +1005,118 @@ onUnmounted(() => {
     </Transition>
 
     <Transition name="fade">
-      <div v-if="isProfileOpen" class="fixed inset-0 z-[95] bg-transparent" @click.self="isProfileOpen = false">
-        <div class="absolute top-[80px] right-6 lg:right-12 w-64 bg-[#18181b]/90 border border-white/10 rounded-2xl shadow-[0_20px_40px_-10px_rgba(0,0,0,0.8)] p-2 transform transition-all backdrop-blur-2xl">
-          <div class="flex items-center gap-3 p-3 mb-2 border-b border-white/10">
-            <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] shadow-sm">
-              <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center font-bold text-sm">{{ currentUser.username.charAt(0).toUpperCase() }}</div>
+      <div 
+        v-if="isProfileOpen" 
+        class="fixed inset-0 z-[95] bg-transparent" 
+        @click.self="isProfileOpen = false"
+      >
+
+        <!-- 🧊 OUTER GLASS (PARALLAX) -->
+        <div 
+          class="absolute top-[80px] right-6 lg:right-12 w-64 p-[1px] rounded-2xl 
+                bg-gradient-to-br from-white/20 via-white/5 to-white/10 
+                shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] 
+                backdrop-blur-2xl 
+                transition-transform duration-200 ease-out will-change-transform"
+          :style="glassTransform"
+        >
+
+          <!-- 🧊 INNER GLASS -->
+          <div class="rounded-2xl bg-white/5 backdrop-blur-2xl border border-white/10 p-2 relative overflow-hidden">
+
+            <!-- ✨ LIGHT REFLECTION (overlay doang) -->
+            <div 
+              class="absolute inset-0 rounded-2xl pointer-events-none"
+              :style="{
+                background: `radial-gradient(circle at ${50 + mouseX*30}% ${50 + mouseY*30}%, rgba(255,255,255,0.15), transparent 60%)`
+              }"
+            ></div>
+
+            <!-- 👤 USER INFO -->
+            <div class="flex items-center gap-3 p-3 mb-2 border-b border-white/10 relative z-10">
+              
+              <div class="relative w-10 h-10">
+                <div class="absolute inset-0 rounded-full bg-gradient-to-tr from-blue-500/60 to-blue-400/60 blur-md opacity-70"></div>
+                <div class="relative w-full h-full rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center font-bold text-sm text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]">
+                  {{ currentUser.username.charAt(0).toUpperCase() }}
+                </div>
+              </div>
+
+              <div class="flex-1 min-w-0">
+                <h4 class="text-white font-bold text-sm truncate">
+                  @{{ currentUser.username }}
+                </h4>
+                <p class="text-xs text-blue-400 font-medium drop-shadow-[0_0_6px_rgba(96,165,250,0.7)]">
+                  Premium Member
+                </p>
+              </div>
             </div>
-            <div class="flex-1 min-w-0">
-              <h4 class="text-white font-bold text-sm truncate">@{{ currentUser.username }}</h4>
-              <p class="text-xs text-blue-400 font-medium">Premium Member</p>
+
+            <!-- 🔘 MENU -->
+            <div class="space-y-1 relative z-10">
+
+              <button class="group w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 rounded-xl transition-all text-left hover:bg-white/10 hover:text-white">
+                <Settings class="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
+                Account Settings
+              </button>
+
+              <button 
+                @click="handleLogout" 
+                class="group w-full flex items-center gap-3 p-2.5 text-sm font-bold text-red-400 rounded-xl transition-all text-left mt-1 hover:bg-red-500/10 hover:text-red-300"
+              >
+                <LogOut class="w-4 h-4 group-hover:scale-110 transition-transform" />
+                Log Out
+              </button>
+
             </div>
-          </div>
-          <div class="space-y-1">
-             <button class="w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/10 rounded-xl transition-colors text-left"><Settings class="w-4 h-4 text-gray-400" /> Account Settings</button>
-            <button @click="handleLogout" class="w-full flex items-center gap-3 p-2.5 text-sm font-bold text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-colors text-left mt-1"><LogOut class="w-4 h-4" /> Log Out</button>
+
           </div>
         </div>
       </div>
     </Transition>
 
-    <header :class="['fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12', isScrolled ? 'backdrop-blur-sm py-3 border-b border-white/5 bg-black/20 shadow-2xl' : 'bg-transparent py-8']">
-      <h1 @click="changeView('home')" class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
+   <header 
+      :class="[
+        'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12',
+        isScrolled 
+          ? 'py-3 border-b border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)]' 
+          : 'bg-transparent py-8'
+      ]"
+    >
+
+      <!-- 🔤 LOGO -->
+      <h1 
+        @click="changeView('home')" 
+        class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500"
+        :class="isScrolled ? 'text-2xl' : 'text-4xl'"
+      >
         <span class="text-white">V</span>
-        <span class="overflow-hidden transition-all duration-500" :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">IORA</span>
-        <span class="text-blue-500">.</span>
+        <span 
+          class="overflow-hidden transition-all duration-500" 
+          :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'"
+        >
+          IORA
+        </span>
+        <span class="text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]">.</span>
       </h1>
-      <div @click="handleUserIconClick" class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] cursor-pointer hover:scale-110 transition-transform shadow-lg shadow-blue-500/20 z-[96]">
-        <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center">
-           <span v-if="isLoggedIn" class="font-bold text-sm text-white">{{ currentUser.username.charAt(0).toUpperCase() }}</span>
-           <UserIcon v-else class="w-5 h-5" />
+
+      <!-- 👤 USER ICON -->
+      <div 
+        @click="handleUserIconClick" 
+        class="relative w-10 h-10 rounded-full cursor-pointer transition-all duration-300 hover:scale-110"
+      >
+        <!-- Outer glow -->
+        <div class="absolute inset-0 rounded-full bg-gradient-to-tr from-blue-500/60 to-blue-400/60 blur-md opacity-70"></div>
+        
+        <!-- Glass layer -->
+        <div class="relative w-full h-full rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)]">
+          <span v-if="isLoggedIn" class="font-bold text-sm text-white">
+            {{ currentUser.username.charAt(0).toUpperCase() }}
+          </span>
+          <UserIcon v-else class="w-5 h-5 text-white" />
         </div>
       </div>
+
     </header>
 
     <div v-if="isLoading" class="p-12 pt-32 space-y-8">
@@ -1184,26 +1344,46 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <nav class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
-      <div class="flex items-center gap-2 px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]  rounded-full ">
-        <div @click="changeView('home')" class="p-3 rounded-full transition-transform transition-opacity cursor-pointer group" :class="{'bg-white/20': currentView === 'home', 'hover:bg-white/10': currentView !== 'home'}">
-          <Home class="w-6 h-6 transition-transform transition-opacity" :class="currentView === 'home' ? 'text-white' : 'text-gray-400 group-hover:text-white group-hover:-translate-y-1'" />
-        </div>
-        
-        <div @click="toggleSearch" class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
-          <Search class="w-6 h-6 transition-transform transition-colors" :class="[isSearchOpen ? 'text-blue-500 drop-shadow-[0_0_6px_rgba(59,130,246,0.6)]' : 'text-gray-400 group-hover:text-white', 'group-hover:-translate-y-1']" />
-        </div>
-        
-        <div class="w-px h-8 bg-white/10 mx-1"></div>
-        <div @click="changeView('movie')" class="p-3 rounded-full transition-transform transition-opacity cursor-pointer group" :class="{'bg-white/20': currentView === 'movie', 'hover:bg-white/10': currentView !== 'movie'}">
-          <Clapperboard class="w-6 h-6 transition-transform transition-opacity" :class="currentView === 'movie' ? 'text-white' : 'text-gray-400 group-hover:text-white group-hover:-translate-y-1'" />
-        </div>
-        <div @click="changeView('tv')" class="p-3 rounded-full transition-transform transition-opacity cursor-pointer group" :class="{'bg-white/20': currentView === 'tv', 'hover:bg-white/10': currentView !== 'tv'}">
-          <MonitorPlay class="w-6 h-6 transition-transform transition-opacity" :class="currentView === 'tv' ? 'text-white' : 'text-gray-400 group-hover:text-white group-hover:-translate-y-1'" />
-        </div>
-        
-        <div @click="toggleWatchlist" class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
-          <Bookmark class="w-6 h-6 transition-transform transition-colors" :class="[isWatchlistOpen ? 'text-blue-500 drop-shadow-[0_0_6px_rgba(59,130,246,0.6)]' : 'text-gray-400 group-hover:text-white', 'group-hover:-translate-y-1']" />
+   <nav class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
+      <div class="relative flex items-center  px-4 py-3  gap-2
+                  bg-white/5 backdrop-blur-xl border border-white/10 
+                  shadow-[0_8px_32px_rgba(0,0,0,0.4)] rounded-full overflow-hidden">
+
+        <!-- 💎 SLIDER -->
+       <div 
+          class="absolute top-1 bottom-1 w-12  
+                bg-white/20 backdrop-blur-xl
+                transition-all duration-1000 ease-[cubic-bezier(0.22,1,0.36,1)]"
+          :style="sliderStyle"
+        ></div>
+
+        <!-- ITEMS -->
+        <div 
+          v-for="(item, index) in navItems" 
+          :key="item.key"
+          :ref="el => navRefs[index] = el"
+          @mouseenter="hoverIndex = index"
+          @mouseleave="hoverIndex = null"
+          @click="item.action"
+          class="relative z-10 p-3 rounded-full cursor-pointer group transition-all"
+        >
+          
+          <!-- ICONS -->
+          <Home v-if="item.key === 'home'" class="w-6 h-6"
+            :class="currentView === 'home' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
+
+          <Search v-if="item.key === 'search'" class="w-6 h-6"
+            :class="isSearchOpen ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'" />
+
+          <Clapperboard v-if="item.key === 'movie'" class="w-6 h-6"
+            :class="currentView === 'movie' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
+
+          <MonitorPlay v-if="item.key === 'tv'" class="w-6 h-6"
+            :class="currentView === 'tv' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
+
+          <Bookmark v-if="item.key === 'watchlist'" class="w-6 h-6"
+            :class="isWatchlistOpen ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'" />
+
         </div>
       </div>
     </nav>
