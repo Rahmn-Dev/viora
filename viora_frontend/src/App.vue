@@ -816,9 +816,9 @@ onUnmounted(() => {
                 class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
               />
 
-              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent p-5 flex flex-col justify-end">
+              <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain" />
+                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                   <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
 
@@ -883,7 +883,7 @@ onUnmounted(() => {
             >
               <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
 
-              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/10  to-transparent p-5 flex flex-col justify-end">
+              <div class="absolute inset-0 bg-gradient-to-t  to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                   <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
