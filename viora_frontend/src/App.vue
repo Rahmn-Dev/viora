@@ -28,7 +28,7 @@ axios.interceptors.response.use(
 );
 
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info } from 'lucide-vue-next';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -396,8 +396,10 @@ onUnmounted(() => {
   <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
     <Transition name="fade">
-      <div v-if="isInfoOpen" class="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm overflow-y-auto flex justify-center items-start pt-10 pb-10 hide-scrollbar" @click.self="closeInfo">
-        <div class="w-full max-w-4xl bg-[#18181b] rounded-2xl shadow-2xl overflow-hidden relative" @click.stop>
+      <div v-if="isInfoOpen" class="fixed inset-0 z-[150] bg-black/80  overflow-y-auto flex justify-center items-start pt-10 pb-10 hide-scrollbar" @click.self="closeInfo">
+        <div class=" backdrop-blur-sm w-full max-w-4xl  rounded-2xl shadow-2xl overflow-hidden relative" @click.stop style="
+    background: #2525256b;
+">
           
           <button @click="closeInfo" class="absolute top-4 right-4 z-50 p-2 bg-black/60 hover:bg-white/20 rounded-full text-white transition-colors">
             <X class="w-6 h-6" />
@@ -822,24 +824,33 @@ onUnmounted(() => {
                   <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
 
-                <div class="flex items-center justify-between gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+                <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
 
                   <!-- IMDb Liquid Glass -->
-                  <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
+                  <!-- <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
                               bg-white/20  border border-white/20
                               flex items-center gap-1 shadow-md">
                     IMDb {{ movie.vote_average?.toFixed(1) }}
-                  </div>
+                  </div> -->
 
                   <!-- Tahun -->
-                  <span class=" text-[11px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-
-                  <!-- Votes Liquid Glass -->
                   <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
+                              bg-white/20  border border-white/20 shadow-md">
+                  <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                 </div> 
+
+                  <!-- <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
+                              bg-white/20  border border-white/20
+                              flex items-center gap-1 shadow-md">
+                    <Star class="w-3 h-3 opacity-80" />
+                    <span class=" text-[12px]"> {{ movie.vote_average?.toFixed(1) }}</span>
+                  </div> -->
+                  <!-- Votes Liquid Glass -->
+                  <!-- <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
                               bg-white/20  border border-white/20 shadow-md">
                     <Flame class="w-3 h-3 opacity-80" />
                     <span>{{ movie.vote_count }}</span>
-                  </div>
+                  </div> -->
 
                 </div>
               </div>
@@ -889,24 +900,31 @@ onUnmounted(() => {
                   <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
 
-               <div class="flex items-center justify-between gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+               <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
 
                   <!-- IMDb Liquid Glass -->
-                  <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
-                              bg-white/20  border border-white/20
-                              flex items-center gap-1 shadow-md">
-                    IMDb {{ movie.vote_average?.toFixed(1) }}
-                  </div>
+                  
 
                   <!-- Tahun -->
-                  <span class=" text-[11px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-
+                    <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
+                              bg-white/20  border border-white/20 shadow-md">
+                  <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                 </div> 
+                 
+                 <!-- <div class="backdrop-blur-sm px-2 py-0.5 rounded-md text-white text-[11px]
+                              bg-white/20 border border-white/20
+                              flex items-center gap-1 shadow-md">
+                    <Heart class="w-3 h-3 opacity-80" />
+                    <span class="text-[12px]">
+                      {{ movie.vote_average?.toFixed(1) }}
+                    </span>
+                  </div> -->
                   <!-- Votes Liquid Glass -->
-                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
+                  <!-- <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
                               bg-white/20  border border-white/20 shadow-md">
                     <Flame class="w-3 h-3 opacity-80" />
                     <span>{{ movie.vote_count }}</span>
-                  </div>
+                  </div> -->
 
                 </div>
               </div>
