@@ -28,7 +28,7 @@ axios.interceptors.response.use(
 );
 
 import { ref, onMounted, onUnmounted, nextTick } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings } from 'lucide-vue-next';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -63,8 +63,13 @@ const watchlistMovies = ref([]);
 const isWatchlistOpen = ref(false); 
 const watchlist = ref(new Set()); 
 
+// --- MOVIE DETAIL / INFO STATE ---
+const isInfoOpen = ref(false);
+const selectedMovieInfo = ref(null);
+const similarMovies = ref([]);
+const isFetchingInfo = ref(false);
+
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-// MENGAMBIL KEY WYZIE DARI .ENV
 const WYZIE_API_KEY = import.meta.env.VITE_WYZIE_API_KEY; 
 const BASE_URL = 'https://api.themoviedb.org/3';
 
@@ -132,6 +137,44 @@ const fetchAllData = async () => {
     movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({ id: cat.id, title: cat.title, movies: await enrichMoviesWithLogos(cat.raw) })));
     startHeroCarousel();
   } catch (error) { console.error(error); } finally { isLoading.value = false; }
+};
+
+// --- FUNGSI MOVIE DETAIL / INFO MODAL ---
+const openInfo = async (movie) => {
+  isInfoOpen.value = true;
+  isFetchingInfo.value = true;
+  selectedMovieInfo.value = movie; // Optimistic set
+  similarMovies.value = [];
+
+  try {
+    const type = movie.media_type === 'tv' ? 'tv' : 'movie';
+    const [detailsRes, creditsRes, similarRes] = await Promise.all([
+      axios.get(`${BASE_URL}/${type}/${movie.id}?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/${type}/${movie.id}/credits?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/${type}/${movie.id}/similar?api_key=${API_KEY}`)
+    ]);
+
+    selectedMovieInfo.value = {
+      ...movie,
+      ...detailsRes.data,
+      // Kita ambil 6 aktor pertama untuk ditampilkan dengan foto
+      cast: creditsRes.data.cast.slice(0, 6) 
+    };
+
+    similarMovies.value = similarRes.data.results.slice(0, 6).map(s => ({...s, media_type: type}));
+  } catch (err) {
+    console.error("Failed to fetch info details", err);
+  } finally {
+    isFetchingInfo.value = false;
+  }
+};
+
+const closeInfo = () => {
+  isInfoOpen.value = false;
+  setTimeout(() => {
+    selectedMovieInfo.value = null;
+    similarMovies.value = [];
+  }, 300); // Bersihkan state setelah animasi hilang
 };
 
 const toggleSearch = () => {
@@ -249,7 +292,6 @@ const checkLoginStatus = () => {
   }
 };
 
-// --- FUNGSI VIDEO PLAYER ---
 const openPlayer = (movie) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
@@ -261,8 +303,6 @@ const openPlayer = (movie) => {
     startTime = Math.floor(history.current_time_seconds);
   }
 
-  // MENYISIPKAN KEY WYZIE UNTUK SUBTITLE
-  // Menggunakan fallback language: "id,en" agar ada opsi Indonesia, lalu Inggris
   if (type === 'movie') {
     embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
   } else {
@@ -271,14 +311,17 @@ const openPlayer = (movie) => {
 
   isPlayerOpen.value = true;
   if(heroTimer) clearInterval(heroTimer); 
+  if(isInfoOpen.value) closeInfo(); // Tutup modal info jika dari sana
 };
 
 const closePlayer = () => {
-  isPlayerOpen.value = false;
   embedUrl.value = '';
-  currentMedia.value = null;
-  startHeroCarousel(); 
-  fetchUserData();
+  setTimeout(() => {
+    isPlayerOpen.value = false;
+    currentMedia.value = null;
+    startHeroCarousel(); 
+    fetchUserData();
+  }, 150); 
 };
 
 let lastSaveTime = 0;
@@ -322,6 +365,7 @@ const handleKeydown = (e) => {
     if (isWatchlistOpen.value) toggleWatchlist();
     if (isLoginOpen.value) isLoginOpen.value = false;
     if (isProfileOpen.value) isProfileOpen.value = false;
+    if (isInfoOpen.value) closeInfo();
   }
 };
 
@@ -351,48 +395,158 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
- <Transition name="fade">
-      <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-        
-        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
-           
-           <div>
-              <img 
-                v-if="currentMedia?.logo_path" 
-                :src="getImageUrl(currentMedia.logo_path, 'w300')" 
-                class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg origin-left" 
-                :alt="currentMedia?.title || currentMedia?.name"
-              />
-              <h2 v-else class="text-xl md:text-2xl font-black uppercase italic tracking-tighter drop-shadow-md text-white">
-                {{ currentMedia?.title || currentMedia?.name }}
-              </h2>
-           </div>
+    <Transition name="fade">
+      <div v-if="isInfoOpen" class="fixed inset-0 z-[150] bg-black/80 backdrop-blur-sm overflow-y-auto flex justify-center items-start pt-10 pb-10 hide-scrollbar" @click.self="closeInfo">
+        <div class="w-full max-w-4xl bg-[#18181b] rounded-2xl shadow-2xl overflow-hidden relative" @click.stop>
+          
+          <button @click="closeInfo" class="absolute top-4 right-4 z-50 p-2 bg-black/60 hover:bg-white/20 rounded-full text-white transition-colors">
+            <X class="w-6 h-6" />
+          </button>
 
+          <div class="relative w-full aspect-video md:aspect-[21/9] bg-black">
+            <img v-if="selectedMovieInfo?.backdrop_path" :src="getImageUrl(selectedMovieInfo.backdrop_path, 'original')" class="w-full h-full object-cover opacity-80" />
+            <div class="absolute inset-0 bg-gradient-to-t from-[#18181b] via-[#18181b]/30 to-transparent"></div>
+
+            <div class="absolute bottom-8 left-8 right-8">
+              <img v-if="selectedMovieInfo?.logo_path" :src="getImageUrl(selectedMovieInfo.logo_path, 'w500')" class="max-w-[250px] md:max-w-[400px] max-h-[100px] object-contain drop-shadow-2xl mb-6 origin-left" />
+              <h2 v-else class="text-4xl md:text-5xl font-black italic uppercase tracking-tighter drop-shadow-2xl mb-4 text-white">
+                {{ selectedMovieInfo?.title || selectedMovieInfo?.name }}
+              </h2>
+              
+              <div class="flex gap-3">
+                <Button @click="openPlayer(selectedMovieInfo)" class="bg-white text-black hover:bg-blue-500 hover:text-white font-bold px-8 h-12 rounded-xl transition-colors">
+                  <Play class="w-5 h-5 mr-2 fill-current" /> Play
+                </Button>
+                <Button @click="handleWatchlistToggle(selectedMovieInfo)" variant="outline" class="bg-black/40 backdrop-blur-md border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors">
+                  <Check v-if="watchlist.has(selectedMovieInfo?.id)" class="w-5 h-5 mr-2 text-green-400" />
+                  <Plus v-else class="w-5 h-5 mr-2" />
+                  My List
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+            <div class="md:col-span-2 space-y-4">
+              <div class="flex flex-wrap items-center gap-3 text-sm font-bold text-gray-400">
+                <span class="text-green-500">{{ (selectedMovieInfo?.vote_average * 10)?.toFixed(0) }}% Match</span>
+                <span>{{ (selectedMovieInfo?.release_date || selectedMovieInfo?.first_air_date)?.substring(0,4) }}</span>
+                <span v-if="selectedMovieInfo?.runtime" class="border border-gray-600 px-1.5 py-0.5 rounded">{{ selectedMovieInfo.runtime }} min</span>
+                <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">{{ selectedMovieInfo?.media_type === 'tv' ? 'Series' : 'HD' }}</span>
+              </div>
+              <p class="text-[15px] md:text-base leading-relaxed text-gray-200">
+                {{ selectedMovieInfo?.overview || 'No overview available.' }}
+              </p>
+            </div>
+
+            <div class="space-y-6 text-sm">
+              
+              
+              <div v-if="selectedMovieInfo?.genres?.length">
+                <span class="text-gray-500 font-bold block mb-1">Genres</span>
+                <div class="flex flex-wrap gap-2 mt-1">
+                  <span v-for="g in selectedMovieInfo.genres" :key="g.id" class="bg-white/10 text-gray-300 px-2.5 py-1 rounded text-xs font-medium">
+                    {{ g.name }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+          </div>
+
+       <div class="p-8 pt-0">
+          <div class="space-y-12 text-sm">
+            <div v-if="selectedMovieInfo?.cast?.length" class="space-y-12">
+              <h4 class="text-gray-500 font-bold mb-2">Cast</h4>
+
+              <!-- Container horizontal scroll -->
+              <div class="flex gap-4 overflow-x-auto py-2">
+                <div 
+                  v-for="actor in selectedMovieInfo.cast" 
+                  :key="actor.id" 
+                  class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow
+                            hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-3"
+                >
+                  <!-- Foto actor -->
+                  <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
+                    <img 
+                      :src="getImageUrl(actor.profile_path, 'w185')" 
+                      :alt="actor.name" 
+                      class="w-full h-full object-cover"
+                    />
+                  </div>
+                  <!-- Nama actor -->
+                  <div class="flex-1">
+                    <span class="text-gray-300 text-sm font-medium leading-snug break-words">
+                      {{ actor.name }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+          <div class="p-8 pt-0" v-if="similarMovies.length">
+            <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> More Like This</h3>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div v-for="sim in similarMovies" :key="sim.id" class="bg-[#2b2b30]/50 rounded-xl overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-300 shadow-lg" @click="openInfo(sim)">
+                <div class="relative aspect-video">
+                  <img :src="getImageUrl(sim.backdrop_path || sim.poster_path, 'w500')" class="w-full h-full object-cover opacity-80" />
+                  <div class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/40 transition-opacity">
+                    <Play class="w-10 h-10 text-white fill-current drop-shadow-lg" @click.stop="openPlayer(sim)" />
+                  </div>
+                  <div class="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 bg-black/60 rounded text-white">
+                     {{ sim.media_type === 'tv' ? 'Series' : 'Movie' }}
+                  </div>
+                </div>
+                <div class="p-3">
+                  <div class="flex justify-between items-start mb-1">
+                    <h4 class="font-bold text-sm line-clamp-1 flex-1 text-white">{{ sim.title || sim.name }}</h4>
+                    <button @click.stop="handleWatchlistToggle(sim)" class="ml-2 border border-white/30 rounded-full p-1 hover:bg-white/10 transition">
+                      <Check v-if="watchlist.has(sim.id)" class="w-3 h-3 text-green-400" />
+                      <Plus v-else class="w-3 h-3 text-white" />
+                    </button>
+                  </div>
+                  <div class="text-[10px] text-gray-400 font-bold mt-1">
+                    <span class="text-green-500 mr-2">{{ (sim.vote_average * 10).toFixed(0) }}% Match</span>
+                    {{ (sim.release_date || sim.first_air_date)?.substring(0,4) }}
+                  </div>
+                  <p class="text-xs text-gray-500 line-clamp-3 mt-2">{{ sim.overview }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="fade">
+      <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
+        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
+           <div>
+              <img v-if="currentMedia?.logo_path" :src="getImageUrl(currentMedia.logo_path, 'w300')" class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg origin-left" :alt="currentMedia?.title || currentMedia?.name" />
+              <h2 v-else class="text-xl md:text-2xl font-black uppercase italic tracking-tighter drop-shadow-md text-white">{{ currentMedia?.title || currentMedia?.name }}</h2>
+           </div>
            <div class="pointer-events-auto group w-200 h-33 flex justify-end items-start -mt-2 -mr-1">
               <button @click="closePlayer" class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer">
                  <X class="w-10 h-10" />
               </button>
            </div>
-
         </div>
-
         <div v-if="embedUrl" class="w-full h-full">
             <iframe :src="embedUrl" width="100%" height="100%" frameborder="0" allowfullscreen class="w-full h-full"></iframe>
         </div>
-
       </div>
     </Transition>
 
     <Transition name="fade">
       <div v-if="isWatchlistOpen" class="fixed inset-0 z-[100] bg-black/90 overflow-y-auto backdrop-blur-xl" @click.self="toggleWatchlist">
         <div class="min-h-screen p-6 lg:p-12 pt-24 relative max-w-7xl mx-auto">
-          <button @click="toggleWatchlist" class="fixed top-8 right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-50 shadow-xl">
-            <X class="w-6 h-6 text-white" />
-          </button>
+          <button @click="toggleWatchlist" class="fixed top-8 right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-50 shadow-xl"><X class="w-6 h-6 text-white" /></button>
           
-          <h2 class="text-4xl font-black mb-10 tracking-tight   flex items-center gap-4">
-            <span class="w-2 h-10 bg-blue-500 rounded-full"></span>
-            My <span class="text-blue-500">Watchlist</span>
+          <h2 class="text-4xl font-black mb-10 tracking-tight flex items-center gap-4">
+            <span class="w-2 h-10 bg-blue-500 rounded-full"></span> My <span class="text-blue-500">Watchlist</span>
           </h2>
 
           <div v-if="watchlistMovies.length === 0" class="flex flex-col items-center justify-center mt-32 text-gray-400">
@@ -402,10 +556,7 @@ onUnmounted(() => {
           </div>
 
           <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-            <div 
-              v-for="movie in watchlistMovies" :key="movie.id"
-              class="relative aspect-video md:aspect-[2/3] rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
-            >
+            <div v-for="movie in watchlistMovies" :key="movie.id" class="relative aspect-video md:aspect-[2/3] rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
               <img :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-110" />
 
               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end">
@@ -415,9 +566,13 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div class="absolute top-3 right-3 z-20">
+              <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 backdrop-blur-md rounded-full transition-colors border border-white/20">
+                  <Info class="w-4 h-4 text-white" />
+                </button>
                 <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80 backdrop-blur-md rounded-full transition-colors border border-white/20">
                   <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
+                  <Plus v-else class="w-4 h-4 text-white" />
                 </button>
               </div>
 
@@ -463,19 +618,20 @@ onUnmounted(() => {
                     <span>{{ (item.release_date || item.first_air_date)?.substring(0,4) }}</span>
                     <span class="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded"><Star class="w-3 h-3 fill-current"/> {{ item.vote_average?.toFixed(1) }}</span>
                   </div>
-                   
                 </div>
-                
                 <div class="w-10 h-10 rounded-full flex items-center justify-center group-hover:bg-white/10 transition-colors">
                   <Play class="w-5 h-5 text-gray-400 group-hover:text-white" />
                 </div>
-                  <button 
-                  @click.stop="handleWatchlistToggle(item, item.media_type)"
-                  class="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-blue-500/20 transition"
-                >
-                  <Check v-if="watchlist.has(item.id)" class="w-4 h-4 text-green-400" />
-                  <Plus v-else class="w-4 h-4 text-white" />
-                </button>
+                
+                <div class="flex gap-2">
+                  <button @click.stop="openInfo(item)" class="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-gray-500/30 transition">
+                    <Info class="w-4 h-4 text-white" />
+                  </button>
+                  <button @click.stop="handleWatchlistToggle(item, item.media_type)" class="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-blue-500/20 transition">
+                    <Check v-if="watchlist.has(item.id)" class="w-4 h-4 text-green-400" />
+                    <Plus v-else class="w-4 h-4 text-white" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -582,12 +738,32 @@ onUnmounted(() => {
               </p>
 
               <div class="flex items-center gap-4">
-                <Button @click="openPlayer(movie)" size="lg" class="bg-white text-black hover:bg-blue-500 hover:text-white font-black px-10 h-16 rounded-2xl transition-transform transition-opacity shadow-2xl">
-                  <Play class="w-6 h-6 mr-2 fill-current" /> Play
+                <Button 
+                  @click="openPlayer(movie)" 
+                  size="lg" 
+                  class="bg-white text-black hover:bg-blue-500 hover:text-white font-black px-10 h-12 rounded-xl transition-transform transition-opacity shadow-2xl"
+                >
+                  <Play class="w-5 h-5  fill-current" /> 
+                  <span class="hidden sm:inline">Play</span>
                 </Button>
-                <Button @click="handleWatchlistToggle(movie, movie.media_type)" size="lg" variant="outline" class="bg-white/10 border-white/20 hover:bg-white/20 h-16 px-10 rounded-2xl font-bold transition-all w-[200px]">
-                  <template v-if="watchlist.has(movie.id)"><Check class="w-6 h-6 mr-2 text-green-400" /> Added</template>
-                  <template v-else><Plus class="w-6 h-6 mr-2" /> My List</template>
+
+                <Button 
+                  @click="openInfo(movie)" 
+                  size="lg" 
+                  class="bg-gray-500/40 hover:bg-white/20 text-white font-black px-10 h-12 rounded-xl transition-all shadow-2xl "
+                >
+                  <Info class="w-5 h-5" /> 
+                  <span class="hidden sm:inline">More Info</span>
+                </Button>
+
+                <Button 
+                  @click="handleWatchlistToggle(movie)" 
+                  variant="outline" 
+                  class="bg-black/40 backdrop-blur-md border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors"
+                >
+                  <Check v-if="watchlist.has(movie?.id)" class="w-5 h-5 mr-2 text-green-400" />
+                  <Plus v-else class="w-5 h-5 " />
+                  <span class="hidden sm:inline">My List</span>
                 </Button>
               </div>
             </div>
@@ -603,7 +779,6 @@ onUnmounted(() => {
           </h3>
 
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4">
-            
             <div 
               v-for="movie in watchHistoryMovies" 
               :key="movie.id"
@@ -617,37 +792,20 @@ onUnmounted(() => {
               />
 
               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent p-5 flex flex-col justify-end">
-                
                 <div class="mb-2">
-                  <img v-if="movie.logo_path" 
-                    :src="getImageUrl(movie.logo_path, 'w300')" 
-                    class="max-w-[140px] max-h-[45px] object-contain" 
-                  />
-                  <h4 v-else class="text-sm font-black line-clamp-1">
-                    {{ movie.title || movie.name }}
-                  </h4>
+                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain" />
+                  <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
 
                 <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class="bg-[#f5c518] text-black px-1.5 py-0.5 rounded">
-                    IMDb {{ movie.vote_average?.toFixed(1) }}
-                  </div>
-                  <span>
-                    {{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}
-                  </span>
-                  <div class="bg-[#E97451]/90 text-white px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px]">
-                    <Flame class="w-3 h-3" />
-                    <span>{{ movie.vote_count }}</span>
-                  </div>
+                  <div class="bg-[#f5c518] text-black px-1.5 py-0.5 rounded">IMDb {{ movie.vote_average?.toFixed(1) }}</div>
+                  <span>{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                  <div class="bg-[#E97451]/90 text-white px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px]"><Flame class="w-3 h-3" /><span>{{ movie.vote_count }}</span></div>
                 </div>
-
               </div>
 
               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80">
-                <div 
-                  class="h-full bg-blue-500"
-                  :style="{ width: (movie.progress_percentage || 0) + '%' }"
-                ></div>
+                <div class="h-full bg-blue-500" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
               </div>
 
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
@@ -656,27 +814,20 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div class="absolute top-3 right-12 z-20">
-                <button 
-                  @click.stop="handleWatchlistToggle(movie, movie.media_type)"
-                  class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20"
-                >
+              <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
+                  <Info class="w-4 h-4 text-white" />
+                </button>
+                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors">
                   <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
                   <Plus v-else class="w-4 h-4 text-white" />
                 </button>
-              </div>
-
-              <div class="absolute top-3 right-3 z-20">
-                <button 
-                  @click.stop="handleRemoveHistory(movie)"
-                  class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20"
-                >
+                <button @click.stop="handleRemoveHistory(movie)" class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20 transition-colors">
                   <X class="w-4 h-4 text-white" />
                 </button>
               </div>
 
             </div>
-
           </div>
         </section>
 
@@ -714,15 +865,17 @@ onUnmounted(() => {
                     <Play class="w-6 h-6 text-white fill-current" />
                  </div>
               </div>
-              <div class="absolute top-3 right-3 z-20">
-                  <button 
-                    @click.stop="handleWatchlistToggle(movie, movie.media_type)"
-                    class="p-2 bg-black/60 hover:bg-blue-500/60 backdrop-blur-md rounded-full transition border border-white/20"
-                  >
-                    <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
-                    <Plus v-else class="w-4 h-4 text-white" />
-                  </button>
-                </div>
+
+              <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
+                  <Info class="w-4 h-4 text-white" />
+                </button>
+                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors">
+                  <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
+                  <Plus v-else class="w-4 h-4 text-white" />
+                </button>
+              </div>
+
             </div>
           </div>
         </section>

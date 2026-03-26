@@ -75,13 +75,3 @@
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-
-::-webkit-scrollbar-thumb {
-  background: rgba(63, 132, 245, 0.6);
-  border-radius: 999px;
-  transition: all 0.3s ease;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(59,130,246,0.6);
-}
