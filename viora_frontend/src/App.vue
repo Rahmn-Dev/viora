@@ -103,7 +103,9 @@ const fetchUserData = async () => {
       const historyDetails = await Promise.all(
         historyData.map(async (item) => {
           const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
-          return { ...tmdbRes.data, media_type: item.media_type, progress_percentage: item.progress_percentage };
+          return { ...tmdbRes.data, media_type: item.media_type, progress_percentage: item.progress_percentage,
+            season: item.season,episode: item.episode
+           };
         })
       );
       watchHistoryMovies.value = await enrichMoviesWithLogos(historyDetails);
@@ -157,11 +159,12 @@ const openInfo = async (movie) => {
     selectedMovieInfo.value = {
       ...movie,
       ...detailsRes.data,
-      // Kita ambil 6 aktor pertama untuk ditampilkan dengan foto
-      cast: creditsRes.data.cast.slice(0, 6) 
+      cast: creditsRes.data.cast.slice(0, 6),
+      production_companies: detailsRes.data.production_companies || [] // <--- ini penting
     };
 
     similarMovies.value = similarRes.data.results.slice(0, 6).map(s => ({...s, media_type: type}));
+
   } catch (err) {
     console.error("Failed to fetch info details", err);
   } finally {
@@ -296,17 +299,37 @@ const openPlayer = (movie) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
   currentMedia.value = movie;
+  
   let startTime = 0;
+  
+  // Ambil ID yang benar (karena data Seasons di Modal Info pakai showId)
+  const tmdbId = movie.showId || movie.id;
+  const history = watchHistoryMovies.value.find(m => m.id === tmdbId);
+  
+  let targetSeason = movie.season;
+  let targetEpisode = movie.episode;
 
-  const history = watchHistoryMovies.value.find(m => m.id === movie.id);
-  if (history && history.current_time_seconds) {
-    startTime = Math.floor(history.current_time_seconds);
+  if (history) {
+    // Jika tidak ada season/episode yang dipilih (misal klik dari Home), pakai data dari history
+    if (!targetSeason) targetSeason = history.season;
+    if (!targetEpisode) targetEpisode = history.episode;
+    
+    // Ambil detik terakhir HANYA JIKA memutar season/episode yang sama dengan di history
+    if ((!movie.season || movie.season === history.season) && (!movie.episode || movie.episode === history.episode)) {
+      // Jaga-jaga jika di DB pakai progress_percentage atau current_time_seconds
+      startTime = Math.floor(history.current_time_seconds || history.progress_percentage || 0); 
+    }
   }
 
+  // Fallback terakhir kalau ternyata film baru dan belum ada di history
+  targetSeason = targetSeason || 1;
+  targetEpisode = targetEpisode || 1;
+
   if (type === 'movie') {
-    embedUrl.value = `https://www.vidking.net/embed/movie/${movie.id}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
+    embedUrl.value = `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
   } else {
-    embedUrl.value = `https://www.vidking.net/embed/tv/${movie.id}/1/1?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
+    // Generate URL TV menggunakan targetSeason dan targetEpisode yang sudah divalidasi
+    embedUrl.value = `https://www.vidking.net/embed/tv/${tmdbId}/${targetSeason}/${targetEpisode}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
   }
 
   isPlayerOpen.value = true;
@@ -321,7 +344,7 @@ const closePlayer = () => {
     currentMedia.value = null;
     startHeroCarousel(); 
     fetchUserData();
-  }, 150); 
+  }, 100); 
 };
 
 let lastSaveTime = 0;
@@ -340,7 +363,7 @@ const handlePlayerMessage = async (event) => {
               progress_percentage: progress, current_time_seconds: currentTime, total_duration: duration,
               is_finished: playerEvent === 'ended'
             });
-            await fetchUserData()
+            // await fetchUserData()
          } catch (e) { console.error('Failed to save progress', e); }
        }
     }
@@ -450,7 +473,7 @@ onUnmounted(() => {
 
                 <!-- Genres -->
                 <div v-if="selectedMovieInfo?.genres?.length">
-                  <span class="text-gray-500 font-bold block mb-1">Genres</span>
+                  <span class="text-white font-bold block mb-1">Genres</span>
                   <div class="flex flex-wrap gap-2 mt-1">
                     <span 
                       v-for="g in selectedMovieInfo.genres" 
@@ -480,11 +503,52 @@ onUnmounted(() => {
               </div>
             
           </div>
+          <div class="p-8 pt-0">
+              <div class="space-y-12 text-sm">
+                <!-- Seasons Section -->
+                  <div v-if="selectedMovieInfo.seasons?.length" class="mt-6">
+                    <h3 class="text-lg font-bold mb-3 flex items-center gap-2">
+                      <span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> Seasons
+                    </h3>
+                    
+                    <div class="flex gap-4 overflow-x-auto pb-2">
+                      <div 
+                        v-for="season in selectedMovieInfo.seasons.map(s => ({ 
+                            ...s, 
+                            media_type: 'tv', 
+                            season: s.season_number ?? 1,  // default 1 kalau null
+                            episode: 1,
+                            showId:selectedMovieInfo.id                      // default episode 1
+                          }))" 
+                          :key="season.id" 
+                          class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300"
+                          @click="openPlayer(season)"
+                          >
+                        <div class="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg">
+                          <img 
+                            :src="getImageUrl(season.poster_path, 'w300')" 
+                            class="w-full h-full object-cover" 
+                            :alt="season.name"
+                          />
+                          <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 text-center">
+                            {{ season.episode_count }} eps
+                          </div>
+                        </div>
+                        <h3 class="text-xs font-semibold mt-1 line-clamp-2 text-white"> {{ season.season_number }}</h3>
+                        <h4 class="text-xs font-semibold mt-1 line-clamp-2 text-white">{{ season.name }}</h4>
+                        <div class="text-[10px] text-green-400 mt-0.5 font-bold">
+                          {{ season.vote_average ? season.vote_average.toFixed(1) : '-' }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+              </div>
+            </div>
 
        <div class="p-8 pt-0">
           <div class="space-y-12 text-sm">
             <div v-if="selectedMovieInfo?.cast?.length" class="space-y-12">
-              <h4 class="text-gray-500 font-bold mb-2">Cast</h4>
+              <h4 class="text-white font-bold mb-2">Cast</h4>
 
               <!-- Container horizontal scroll -->
               <div class="flex gap-4 overflow-x-auto py-2">
@@ -513,12 +577,51 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+    <div class="p-8 pt-0">
+  <div class="space-y-12 text-sm">
+    <div v-if="selectedMovieInfo?.production_companies?.length">
+      <h4 class="text-white font-bold mb-2">Production Companies</h4>
+
+      <!-- horizontal scroll container -->
+      <div class="flex gap-4 overflow-x-auto py-2">
+        <!-- loop hanya company yang punya logo_path -->
+        <template v-for="company in selectedMovieInfo.production_companies" :key="company.id || company.name">
+          <div 
+            v-if="company.logo_path"
+            class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow
+                   hover:scale-105 hover:shadow-lg bg-white border border-white/20 rounded-2xl p-5"
+          >
+            <div >
+              <img 
+                :src="`https://image.tmdb.org/t/p/w185${company.logo_path}`" 
+                :alt="company.name" 
+              
+              />
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div v-else 
+         class="bg-white/20 backdrop-blur-md border border-white/30 rounded-xl p-4 flex justify-center items-center"
+         style="box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);">
+      <p>No company logo available</p>
+    </div>
+  </div>
+</div>
+          
+
+        
           <div class="p-8 pt-0" v-if="similarMovies.length">
             <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> More Like This</h3>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div v-for="sim in similarMovies" :key="sim.id" class="bg-[#2b2b30]/50 rounded-xl overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-300 shadow-lg" @click="openInfo(sim)">
                 <div class="relative aspect-video">
-                  <img :src="getImageUrl(sim.backdrop_path || sim.poster_path, 'w500')" class="w-full h-full object-cover opacity-80" />
+                  <img :src="getImageUrl(sim.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80" />
+                  <!-- <img :src="getImageUrl(sim.logo_path, 'w150')" class="w-full h-full object-cover opacity-80" />
+                    -->
+            
                   <div class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/40 transition-opacity">
                     <Play class="w-10 h-10 text-white fill-current drop-shadow-lg" @click.stop="openPlayer(sim)" />
                   </div>
@@ -550,12 +653,12 @@ onUnmounted(() => {
 
     <Transition name="fade">
       <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
+        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none" >
            <div>
               <img v-if="currentMedia?.logo_path" :src="getImageUrl(currentMedia.logo_path, 'w300')" class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg origin-left" :alt="currentMedia?.title || currentMedia?.name" />
               <h2 v-else class="text-xl md:text-2xl font-black uppercase  tracking-tighter drop-shadow-md text-white">{{ currentMedia?.title || currentMedia?.name }}</h2>
            </div>
-           <div class="pointer-events-auto group w-200 h-33 flex justify-end items-start -mt-2 -mr-1">
+           <div class="pointer-events-auto group w-200 h-33 flex justify-end items-start -mt-2 -mr-1" >
               <button @click="closePlayer" class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer">
                  <X class="w-10 h-10" />
               </button>
