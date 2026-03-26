@@ -127,7 +127,7 @@ const fetchAllData = async () => {
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=16`)
     ]);
 
-    heroMovies.value = await enrichMoviesWithLogos(trending.data.results.slice(0, 5));
+    heroMovies.value = await enrichMoviesWithLogos(trending.data.results.slice(0, 8));
     const categoriesData = [
       { id: 1, title: 'Trending Now', raw: trending.data.results.slice(5, 15) },
       { id: 2, title: 'Top Rated Movies', raw: topRated.data.results.slice(0, 10) },
@@ -404,12 +404,17 @@ onUnmounted(() => {
           </button>
 
           <div class="relative w-full aspect-video md:aspect-[21/9] bg-black">
-            <img v-if="selectedMovieInfo?.backdrop_path" :src="getImageUrl(selectedMovieInfo.backdrop_path, 'original')" class="w-full h-full object-cover opacity-80" />
+            <img 
+              v-if="selectedMovieInfo?.backdrop_path || selectedMovieInfo?.poster_path" 
+              :src="getImageUrl(selectedMovieInfo.backdrop_path || selectedMovieInfo.poster_path, selectedMovieInfo.backdrop_path ? 'original' : 'w500')" 
+              :class="selectedMovieInfo.backdrop_path ? 'object-cover' : 'object-contain'" 
+              class="w-full h-full opacity-80"
+            />
             <div class="absolute inset-0 bg-gradient-to-t from-[#18181b] via-[#18181b]/30 to-transparent"></div>
 
             <div class="absolute bottom-8 left-8 right-8">
               <img v-if="selectedMovieInfo?.logo_path" :src="getImageUrl(selectedMovieInfo.logo_path, 'w500')" class="max-w-[250px] md:max-w-[400px] max-h-[100px] object-contain drop-shadow-2xl mb-6 origin-left" />
-              <h2 v-else class="text-4xl md:text-5xl font-black italic uppercase tracking-tighter drop-shadow-2xl mb-4 text-white">
+              <h2 v-else class="text-4xl md:text-5xl font-black  uppercase tracking-tighter drop-shadow-2xl mb-4 text-white">
                 {{ selectedMovieInfo?.title || selectedMovieInfo?.name }}
               </h2>
               
@@ -440,17 +445,37 @@ onUnmounted(() => {
             </div>
 
             <div class="space-y-6 text-sm">
-              
-              
-              <div v-if="selectedMovieInfo?.genres?.length">
-                <span class="text-gray-500 font-bold block mb-1">Genres</span>
-                <div class="flex flex-wrap gap-2 mt-1">
-                  <span v-for="g in selectedMovieInfo.genres" :key="g.id" class="bg-white/10 text-gray-300 px-2.5 py-1 rounded text-xs font-medium">
-                    {{ g.name }}
-                  </span>
+
+                <!-- Genres -->
+                <div v-if="selectedMovieInfo?.genres?.length">
+                  <span class="text-gray-500 font-bold block mb-1">Genres</span>
+                  <div class="flex flex-wrap gap-2 mt-1">
+                    <span 
+                      v-for="g in selectedMovieInfo.genres" 
+                      :key="g.id" 
+                      class="bg-white/10 text-gray-300 px-2.5 py-1 rounded text-xs font-medium"
+                    >
+                      {{ g.name }}
+                    </span>
+                  </div>
                 </div>
+
+                <!-- Rating & Popularity -->
+                <div class="flex gap-3 mt-2">
+                  <!-- Rating -->
+                  <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
+                    <Star class="w-4 h-4 text-yellow-400" />
+                    <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.vote_average }}/10</span>
+                  </div>
+
+                  <!-- Popularity -->
+                  <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
+                    <Flame class="w-4 h-4 text-red-400" />
+                    <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.popularity.toFixed(1) }}</span>
+                  </div>
+                </div>
+
               </div>
-            </div>
             
           </div>
 
@@ -465,7 +490,7 @@ onUnmounted(() => {
                   v-for="actor in selectedMovieInfo.cast" 
                   :key="actor.id" 
                   class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow
-                            hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-3"
+                            hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-1"
                 >
                   <!-- Foto actor -->
                   <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
@@ -526,7 +551,7 @@ onUnmounted(() => {
         <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
            <div>
               <img v-if="currentMedia?.logo_path" :src="getImageUrl(currentMedia.logo_path, 'w300')" class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg origin-left" :alt="currentMedia?.title || currentMedia?.name" />
-              <h2 v-else class="text-xl md:text-2xl font-black uppercase italic tracking-tighter drop-shadow-md text-white">{{ currentMedia?.title || currentMedia?.name }}</h2>
+              <h2 v-else class="text-xl md:text-2xl font-black uppercase  tracking-tighter drop-shadow-md text-white">{{ currentMedia?.title || currentMedia?.name }}</h2>
            </div>
            <div class="pointer-events-auto group w-200 h-33 flex justify-end items-start -mt-2 -mr-1">
               <button @click="closePlayer" class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer">
@@ -562,7 +587,7 @@ onUnmounted(() => {
               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                  <h4 v-else class="text-sm md:text-base font-black uppercase italic tracking-tighter line-clamp-2 drop-shadow-md">{{ movie.title || movie.name }}</h4>
+                  <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-2 drop-shadow-md">{{ movie.title || movie.name }}</h4>
                 </div>
               </div>
 
@@ -730,7 +755,7 @@ onUnmounted(() => {
                 </div>
 
                 <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-lg" />
-                <h2 v-else class="text-5xl lg:text-7xl font-black uppercase italic tracking-tighter">{{ movie.title || movie.name }}</h2>
+                <h2 v-else class="text-5xl lg:text-7xl font-black uppercase  tracking-tighter">{{ movie.title || movie.name }}</h2>
               </div>
 
               <p class="text-gray-300 text-lg line-clamp-3 max-w-xl font-medium drop-shadow-md leading-relaxed">
@@ -778,29 +803,44 @@ onUnmounted(() => {
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
 
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
             <div 
               v-for="movie in watchHistoryMovies" 
               :key="movie.id"
               @click="openPlayer(movie)"
-              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] group cursor-pointer transition-all hover:scale-110 hover:-translate-y-2 hover:z-40"
+              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
             >
 
               <img 
-                :src="getImageUrl(movie.backdrop_path, 'w780')" 
-                class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition duration-700 group-hover:scale-105" 
+                :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" 
+                class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
               />
 
-              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent p-5 flex flex-col justify-end">
+              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain" />
                   <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
 
-                <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class="bg-[#f5c518] text-black px-1.5 py-0.5 rounded">IMDb {{ movie.vote_average?.toFixed(1) }}</div>
-                  <span>{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-                  <div class="bg-[#E97451]/90 text-white px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px]"><Flame class="w-3 h-3" /><span>{{ movie.vote_count }}</span></div>
+                <div class="flex items-center justify-between gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+
+                  <!-- IMDb Liquid Glass -->
+                  <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
+                              bg-white/20  border border-white/20
+                              flex items-center gap-1 shadow-md">
+                    IMDb {{ movie.vote_average?.toFixed(1) }}
+                  </div>
+
+                  <!-- Tahun -->
+                  <span class=" text-[11px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+
+                  <!-- Votes Liquid Glass -->
+                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
+                              bg-white/20  border border-white/20 shadow-md">
+                    <Flame class="w-3 h-3 opacity-80" />
+                    <span>{{ movie.vote_count }}</span>
+                  </div>
+
                 </div>
               </div>
 
@@ -809,7 +849,7 @@ onUnmounted(() => {
               </div>
 
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <div class="w-14 h-14 bg-white/10 rounded-full flex items-center justify-center border border-white/30">
+                <div class="w-14 h-14 bg-white/10 rounded-full backdrop-blur-sm flex items-center justify-center border border-white/30">
                   <Play class="w-6 h-6 text-white fill-current" />
                 </div>
               </div>
@@ -836,32 +876,44 @@ onUnmounted(() => {
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> {{ category.title }}
           </h3>
           
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-20px_40px_rgba(59,130,246,0.08)] transition-shadow duration-500" style="padding-bottom: 20px; padding-top: 20px;">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
             <div 
               v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)"
               class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
             >
-              <img :src="getImageUrl(movie.backdrop_path, 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
+              <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
 
-              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent p-5 flex flex-col justify-end">
+              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/10  to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                  <h4 v-else class="text-sm md:text-base font-black uppercase italic tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
+                  <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
 
-                <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                   <div class="bg-[#f5c518] text-black px-1.5 py-0.5 rounded ">IMDb {{ movie.vote_average.toFixed(1) }}</div>
-                   <span class="text-white-600">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-                   <div class="bg-[#E97451]/90 text-white px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] font-bold ">
-                      <Flame class="w-3 h-3 opacity-80" />
-                      <span>{{ movie.vote_count }}</span>
-                    </div>
+               <div class="flex items-center justify-between gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+
+                  <!-- IMDb Liquid Glass -->
+                  <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
+                              bg-white/20  border border-white/20
+                              flex items-center gap-1 shadow-md">
+                    IMDb {{ movie.vote_average?.toFixed(1) }}
+                  </div>
+
+                  <!-- Tahun -->
+                  <span class=" text-[11px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+
+                  <!-- Votes Liquid Glass -->
+                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
+                              bg-white/20  border border-white/20 shadow-md">
+                    <Flame class="w-3 h-3 opacity-80" />
+                    <span>{{ movie.vote_count }}</span>
+                  </div>
+
                 </div>
               </div>
               <div class="absolute inset-0 rounded-2xl pointer-events-none bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
 
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                 <div class="w-14 h-14 bg-white/10  rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
+                 <div class="w-14 h-14 bg-white/10  rounded-full flex backdrop-blur-sm items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
                     <Play class="w-6 h-6 text-white fill-current" />
                  </div>
               </div>
