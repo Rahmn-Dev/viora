@@ -86,3 +86,6 @@
 .group:hover .icon-bounce {
   animation: bounce-soft 0.9s ease;
 }
+html {
+  scroll-behavior: smooth;
+}

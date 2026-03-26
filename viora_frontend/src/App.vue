@@ -32,7 +32,7 @@ import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, U
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-
+import Lenis from 'lenis'
 
 const mouseX = ref(0)
 const mouseY = ref(0)
@@ -695,6 +695,17 @@ watch(hoverIndex, () => {
 })
 
 onMounted(() => {
+ lenis = new Lenis({
+    duration: 1,
+    smoothWheel: true
+  })
+
+  function raf(time) {
+    lenis.raf(time)
+    requestAnimationFrame(raf)
+  }
+
+  requestAnimationFrame(raf)
    window.addEventListener('mousemove', handleMouseMove)
   checkLoginStatus();
   fetchAllData();
@@ -723,7 +734,7 @@ onUnmounted(() => {
       leave-from-class="opacity-100"
       leave-to-class="opacity-0"
     >
-      <div v-if="isInfoOpen" class="fixed inset-0 z-[150] bg-black/80  overflow-y-auto flex justify-center items-start pt-10 pb-10 hide-scrollbar" @click.self="closeInfo">
+      <div data-lenis-prevent v-if="isInfoOpen" class="fixed inset-0 z-[150] bg-black/80  overflow-y-auto flex justify-center items-start pt-10 pb-10 hide-scrollbar" @click.self="closeInfo">
         <div class=" backdrop-blur-sm w-full max-w-4xl  rounded-2xl shadow-2xl overflow-hidden relative" @click.stop style="background: #2525256b;">
           <button @click="closeInfo" class="absolute top-4 right-4 z-50 p-2 bg-black/60 hover:bg-white/20 rounded-full text-white transition-colors">
             <X class="w-6 h-6" />
@@ -927,7 +938,7 @@ onUnmounted(() => {
     </Transition>
 
     <Transition name="fade">
-      <div v-if="isWatchlistOpen" class="fixed inset-0 z-[100] bg-black/90 overflow-y-auto backdrop-blur-xl" @click.self="toggleWatchlist">
+      <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[100] bg-black/90 overflow-y-auto backdrop-blur-xl" @click.self="toggleWatchlist">
         <div class="min-h-screen p-6 lg:p-12 pt-24 relative max-w-7xl mx-auto">
           <button @click="toggleWatchlist" class="fixed top-8 right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-50 shadow-xl"><X class="w-6 h-6 text-white" /></button>
           
@@ -1245,7 +1256,7 @@ onUnmounted(() => {
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth  hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
             <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
               <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
               <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
