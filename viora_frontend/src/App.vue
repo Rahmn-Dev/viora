@@ -667,12 +667,20 @@ onUnmounted(() => {
 <template>
   <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
-    <Transition name="fade">
+    <Transition
+      enter-active-class="transition-opacity duration-300"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-200"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
       <div v-if="isInfoOpen" class="fixed inset-0 z-[150] bg-black/80  overflow-y-auto flex justify-center items-start pt-10 pb-10 hide-scrollbar" @click.self="closeInfo">
         <div class=" backdrop-blur-sm w-full max-w-4xl  rounded-2xl shadow-2xl overflow-hidden relative" @click.stop style="background: #2525256b;">
           <button @click="closeInfo" class="absolute top-4 right-4 z-50 p-2 bg-black/60 hover:bg-white/20 rounded-full text-white transition-colors">
             <X class="w-6 h-6" />
           </button>
+          
 
           <div class="relative w-full aspect-video md:aspect-[21/9] bg-black">
             <img v-if="selectedMovieInfo?.backdrop_path || selectedMovieInfo?.poster_path" :src="getImageUrl(selectedMovieInfo.backdrop_path || selectedMovieInfo.poster_path, selectedMovieInfo.backdrop_path ? 'original' : 'w500')" :class="selectedMovieInfo.backdrop_path ? 'object-cover' : 'object-contain'" class="w-full h-full opacity-80" />
