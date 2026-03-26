@@ -159,30 +159,41 @@ const handleRemoveHistory = async (movie) => {
   } catch (err) { console.error("❌ Failed remove history", err); }
 };
 
+// --- FETCH DATA DIPERBARUI DENGAN LAYOUT MIXED & K-DRAMAS DLL ---
 const fetchAllData = async () => {
   try {
-    const [trending, topRated, action, animation] = await Promise.all([
+    const [trending, topRatedMovies, action, animation, topRatedTv, korean, horror] = await Promise.all([
       axios.get(`${BASE_URL}/trending/all/day?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/movie/top_rated?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=28`),
-      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=16`)
+      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=16`),
+      axios.get(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}`), // TV Series Top Rated
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_origin_country=KR`), // K-Dramas
+      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`) // Horror
     ]);
 
     heroMovies.value = await enrichMoviesWithLogos(trending.data.results.slice(0, 8));
+    
     const categoriesData = [
-      { id: 1, title: 'Trending Now', raw: trending.data.results.slice(5, 15) },
-      { id: 2, title: 'Top Rated Movies', raw: topRated.data.results.slice(0, 10) },
-      { id: 3, title: 'Action Thriller', raw: action.data.results.slice(0, 10) },
-      { id: 4, title: 'Animation Series', raw: animation.data.results.slice(0, 10) },
+      { id: 1, title: 'Trending Now', layout: 'landscape', raw: trending.data.results.slice(5, 15) },
+      { id: 2, title: 'Top Rated TV Series', layout: 'hero-card', raw: topRatedTv.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
+      { id: 3, title: 'K-Dramas', layout: 'portrait', raw: korean.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
+      { id: 4, title: 'Horror Fests', layout: 'portrait', raw: horror.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
+      { id: 5, title: 'Top Rated Movies', layout: 'landscape', raw: topRatedMovies.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
+      { id: 6, title: 'Action Thriller', layout: 'portrait', raw: action.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
+      { id: 7, title: 'Animation Series', layout: 'landscape', raw: animation.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
     ];
-    movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({ id: cat.id, title: cat.title, movies: await enrichMoviesWithLogos(cat.raw) })));
+    
+    movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({ 
+      id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw) 
+    })));
+    
     startHeroCarousel();
   } catch (error) { console.error(error); } finally { isLoading.value = false; }
 };
 
-// --- DATA FETCHING FOR MOVIE & TV SPECIFIC PAGES ---
 const fetchMoviePageData = async () => {
-  if (movieCategoriesList.value.length > 0) return; // Cache check
+  if (movieCategoriesList.value.length > 0) return; 
   try {
     const [nowPlaying, popular, topRated, upcoming] = await Promise.all([
       axios.get(`${BASE_URL}/movie/now_playing?api_key=${API_KEY}`),
@@ -195,17 +206,17 @@ const fetchMoviePageData = async () => {
     movieHeroMoviesList.value = await enrichMoviesWithLogos(popData.slice(0, 8));
 
     const cats = [
-      { id: 'm1', title: 'Now Playing', raw: nowPlaying.data.results.slice(0, 15).map(m => ({...m, media_type: 'movie'})) },
-      { id: 'm2', title: 'Popular Movies', raw: popData.slice(8, 20) },
-      { id: 'm3', title: 'Top Rated', raw: topRated.data.results.slice(0, 15).map(m => ({...m, media_type: 'movie'})) },
-      { id: 'm4', title: 'Upcoming', raw: upcoming.data.results.slice(0, 15).map(m => ({...m, media_type: 'movie'})) }
+      { id: 'm1', title: 'Now Playing', layout: 'hero-card', raw: nowPlaying.data.results.slice(0, 10).map(m => ({...m, media_type: 'movie'})) },
+      { id: 'm2', title: 'Popular Movies', layout: 'portrait', raw: popData.slice(8, 20) },
+      { id: 'm3', title: 'Top Rated', layout: 'landscape', raw: topRated.data.results.slice(0, 10).map(m => ({...m, media_type: 'movie'})) },
+      { id: 'm4', title: 'Upcoming', layout: 'portrait', raw: upcoming.data.results.slice(0, 10).map(m => ({...m, media_type: 'movie'})) }
     ];
-    movieCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, movies: await enrichMoviesWithLogos(cat.raw) })));
+    movieCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw) })));
   } catch(e) { console.error(e); }
 };
 
 const fetchTvPageData = async () => {
-  if (tvCategoriesList.value.length > 0) return; // Cache check
+  if (tvCategoriesList.value.length > 0) return; 
   try {
     const [airingToday, onTheAir, popular, topRated] = await Promise.all([
       axios.get(`${BASE_URL}/tv/airing_today?api_key=${API_KEY}`),
@@ -218,12 +229,12 @@ const fetchTvPageData = async () => {
     tvHeroMoviesList.value = await enrichMoviesWithLogos(popData.slice(0, 8));
 
     const cats = [
-      { id: 't1', title: 'Airing Today', raw: airingToday.data.results.slice(0, 15).map(m => ({...m, media_type: 'tv'})) },
-      { id: 't2', title: 'On The Air', raw: onTheAir.data.results.slice(0, 15).map(m => ({...m, media_type: 'tv'})) },
-      { id: 't3', title: 'Popular Series', raw: popData.slice(8, 20) },
-      { id: 't4', title: 'Top Rated', raw: topRated.data.results.slice(0, 15).map(m => ({...m, media_type: 'tv'})) }
+      { id: 't1', title: 'Airing Today', layout: 'hero-card', raw: airingToday.data.results.slice(0, 10).map(m => ({...m, media_type: 'tv'})) },
+      { id: 't2', title: 'On The Air', layout: 'portrait', raw: onTheAir.data.results.slice(0, 10).map(m => ({...m, media_type: 'tv'})) },
+      { id: 't3', title: 'Popular Series', layout: 'landscape', raw: popData.slice(8, 20) },
+      { id: 't4', title: 'Top Rated', layout: 'portrait', raw: topRated.data.results.slice(0, 10).map(m => ({...m, media_type: 'tv'})) }
     ];
-    tvCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, movies: await enrichMoviesWithLogos(cat.raw) })));
+    tvCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw) })));
   } catch(e) { console.error(e); }
 };
 
@@ -244,7 +255,7 @@ const applyFilters = async () => {
 };
 
 const changeView = async (viewType) => {
-  if (currentView.value === viewType) return; // Prevent reload if same view
+  if (currentView.value === viewType) return; 
   
   window.scrollTo({ top: 0, behavior: 'smooth' });
   currentView.value = viewType;
@@ -257,21 +268,17 @@ const changeView = async (viewType) => {
     return;
   }
   
-  // Reset filter when switching Movie/TV
   filters.value = { genre: '', year: '', sortBy: 'popularity.desc' };
   isBrowseLoading.value = true;
   browseItems.value = [];
   browsePage.value = 1;
 
-  // Load specific Hero and Category Rows
   if (viewType === 'movie') await fetchMoviePageData();
   if (viewType === 'tv') await fetchTvPageData();
 
-  // Reset and restart Carousel for the new view
   currentHeroIndex.value = 0;
   startHeroCarousel();
   
-  // Load Filters and Grid
   await fetchGenres();
   await applyFilters();
   isBrowseLoading.value = false;
@@ -497,7 +504,7 @@ const closePlayer = () => {
   setTimeout(() => {
     isPlayerOpen.value = false;
     currentMedia.value = null;
-    startHeroCarousel(); 
+    if(currentView.value === 'home') startHeroCarousel(); 
     fetchUserData();
   }, 100); 
 };
@@ -617,7 +624,17 @@ onUnmounted(() => {
                 <span class="text-green-500">{{ (selectedMovieInfo?.vote_average * 10)?.toFixed(0) }}% Match</span>
                 <span>{{ (selectedMovieInfo?.release_date || selectedMovieInfo?.first_air_date)?.substring(0,4) }}</span>
                 <span v-if="selectedMovieInfo?.runtime" class="border border-gray-600 px-1.5 py-0.5 rounded">{{ selectedMovieInfo.runtime }} min</span>
-                <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">{{ selectedMovieInfo?.media_type === 'tv' ? 'Series' : 'HD' }}</span>
+                <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">
+                  {{
+                    selectedMovieInfo?.media_type === 'tv' 
+                      ? 'Series' 
+                      : selectedMovieInfo?.media_type === 'movie' 
+                        ? 'Movie' 
+                        : 'Unknown'
+                  }}
+                </span>
+                <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">HD</span>
+                <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">CC</span>
               </div>
               <p class="text-[15px] md:text-base leading-relaxed text-gray-200">{{ selectedMovieInfo?.overview || 'No overview available.' }}</p>
             </div>
@@ -1015,37 +1032,53 @@ onUnmounted(() => {
 
         <section v-for="category in activeCategories" :key="category.id" class="pl-6 lg:pl-12">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 "><span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> {{ category.title }}</h3>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
-            <div v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
-              <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
-              <div class="absolute inset-0 bg-gradient-to-t  to-transparent p-5 flex flex-col justify-end">
+          
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200 snap-x" style="padding-bottom: 20px; padding-top: 40px;">
+            <div v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)" 
+              :class="[
+                'relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer snap-center',
+                category.layout === 'hero-card' ? 'w-[85vw] md:w-[700px] aspect-video md:aspect-[21/9]' :
+                category.layout === 'portrait' ? 'w-[150px] md:w-[220px] aspect-[2/3]' :
+                'w-[300px] md:w-[390px] aspect-video'
+              ]">
+              
+              <img :src="getImageUrl(
+                 category.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 
+                 category.layout === 'portrait' ? 'w500' : 'w780')" 
+                 class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
+              />
+              
+              <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 flex flex-col justify-end" :class="category.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/80 via-black/20'">
                 <div class="mb-2">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                  <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
+                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" :class="category.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]'" class="object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
+                  <h4 v-else :class="category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1'" class="font-black uppercase tracking-tighter drop-shadow-md">{{ movie.title || movie.name }}</h4>
                 </div>
-               <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                    <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-white/20  border border-white/20 shadow-md">
-                  <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-                 </div> 
+               <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-white/20 border border-white/20 shadow-md">
+                    <span class="text-[11px] md:text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                  </div> 
                 </div>
               </div>
+              
               <div class="absolute inset-0 rounded-2xl pointer-events-none bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                 <div class="w-14 h-14 bg-white/10  rounded-full flex backdrop-blur-sm items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-6 h-6 text-white fill-current" /></div>
+                 <div class="w-12 h-12 md:w-14 md:h-14 bg-white/10 rounded-full flex backdrop-blur-sm items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" /></div>
               </div>
+              
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-4 h-4 text-white" /></button>
-                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Bookmark v-else class="w-4 h-4 text-white" /></button>
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
+                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-3 h-3 md:w-4 md:h-4 text-green-400" /><Bookmark v-else class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
               </div>
             </div>
           </div>
         </section>
 
-        <section v-if="currentView !== 'home'" class="px-6 lg:px-12 pt-10">
+        <section v-if="currentView !== 'home'" class="px-6 lg:px-12 pt-10 border-t border-white/10">
             <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 relative z-30">
-              <h2 class="text-4xl font-black tracking-tight flex items-center gap-4">
+              <h2 class="text-3xl md:text-4xl font-black tracking-tight flex items-center gap-4">
                 <span class="w-2 h-10 bg-blue-500 rounded-full"></span> 
-                Browse <span class="">{{ currentView === 'movie' ? 'Movies' : 'TV Series' }}</span>
+                Discover <span class="">{{ currentView === 'movie' ? 'Movies' : 'TV Series' }}</span>
               </h2>
 
               <div class="flex flex-wrap items-center gap-3">
@@ -1088,10 +1121,24 @@ onUnmounted(() => {
                   class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-110" 
                 />
 
-                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end" style="     align-items: center; ">
+               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end items-center">
                   <div class="mb-2">
-                    <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                    <h4 v-else class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md">{{ movie.title || movie.name }}</h4>
+                    
+                    <!-- kalau ada logo, selalu tampil -->
+                    <img 
+                      v-if="movie.logo_path" 
+                      :src="getImageUrl(movie.logo_path, 'w300')" 
+                      class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" 
+                    />
+
+                    <!-- fallback ke teks -->
+                    <h4 
+                      v-else 
+                      class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center"
+                    >
+                      {{ movie.title || movie.name }}
+                    </h4>
+
                   </div>
                 </div>
 
