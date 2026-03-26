@@ -1361,7 +1361,7 @@ onUnmounted(() => {
        <div 
           class="absolute top-1 bottom-1 w-12  
                 bg-white/20 backdrop-blur-xl
-                transition-all duration-1000 ease-[cubic-bezier(0.22,1,0.36,1)]"
+                transition-all duration-800 ease-[cubic-bezier(0.22,1,0.36,1)]"
           :style="sliderStyle"
         ></div>
 
@@ -1377,19 +1377,19 @@ onUnmounted(() => {
         >
           
           <!-- ICONS -->
-          <Home v-if="item.key === 'home'" class="w-6 h-6"
+          <Home v-if="item.key === 'home'" class="w-6 h-6 icon-bounce"
             :class="currentView === 'home' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
 
-          <Search v-if="item.key === 'search'" class="w-6 h-6"
+          <Search v-if="item.key === 'search'" class="w-6 h-6 icon-bounce"
             :class="isSearchOpen ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'" />
 
-          <Clapperboard v-if="item.key === 'movie'" class="w-6 h-6"
+          <Clapperboard v-if="item.key === 'movie'" class="w-6 h-6 icon-bounce"
             :class="currentView === 'movie' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
 
-          <MonitorPlay v-if="item.key === 'tv'" class="w-6 h-6"
+          <MonitorPlay v-if="item.key === 'tv'" class="w-6 h-6 icon-bounce"
             :class="currentView === 'tv' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
 
-          <Bookmark v-if="item.key === 'watchlist'" class="w-6 h-6"
+          <Bookmark v-if="item.key === 'watchlist'" class="w-6 h-6 icon-bounce"
             :class="isWatchlistOpen ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'" />
 
         </div>

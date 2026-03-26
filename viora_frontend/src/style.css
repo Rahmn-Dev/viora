@@ -75,3 +75,14 @@
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+@keyframes bounce-soft {
+  0%   { transform: translateY(0); }
+  30%  { transform: translateY(-6px); }
+  60%  { transform: translateY(2px); }
+  100% { transform: translateY(0); }
+}
+
+.group:hover .icon-bounce {
+  animation: bounce-soft 0.9s ease;
+}
