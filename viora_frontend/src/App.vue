@@ -42,6 +42,16 @@ const activeIndex = ref(0)
 const hoverIndex = ref(null)
 const isAnimating = ref(false)
 const navRefs = ref([])
+const magneticOffset = ref({ x: 0, y: 0 })
+const magneticOffsets = ref({})
+const activeMagnetIndex = ref(null)
+const activeMagnet = ref(null)
+
+
+const resetMagnet = () => {
+  magneticOffset.value = { x: 0, y: 0 }
+  activeMagnet.value = null
+}
 
 const sliderStyle = computed(() => {
   const index = hoverIndex.value ?? activeIndex.value
@@ -77,6 +87,44 @@ const glassTransform = computed(() => {
     `
   }
 })
+
+const handleNavMagnet = (e, index) => {
+  const rect = e.currentTarget.getBoundingClientRect()
+
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+
+  const centerX = rect.width / 2
+  const centerY = rect.height / 2
+
+  const moveX = (x - centerX) * 0.60
+  const moveY = (y - centerY) * 0.60
+
+  magneticOffsets.value[index] = { x: moveX, y: moveY }
+  activeMagnetIndex.value = index
+}
+
+const resetNavMagnet = (index) => {
+  magneticOffsets.value[index] = { x: 0, y: 0 }
+  activeMagnetIndex.value = null
+}
+
+const handleMagnetMove = (e, key) => {
+  const rect = e.currentTarget.getBoundingClientRect()
+
+  const x = e.clientX - rect.left
+  const y = e.clientY - rect.top
+
+  const centerX = rect.width / 2
+  const centerY = rect.height / 2
+
+  const moveX = (x - centerX) * 0.2
+  const moveY = (y - centerY) * 0.2
+
+  magneticOffset.value = { x: moveX, y: moveY }
+  activeMagnet.value = key
+}
+
 const handleMouseMove = (e) => {
   const x = (e.clientX / window.innerWidth - 0.5) * 2
   const y = (e.clientY / window.innerHeight - 0.5) * 2
@@ -1063,15 +1111,27 @@ onUnmounted(() => {
             <!-- 🔘 MENU -->
             <div class="space-y-1 relative z-10">
 
-              <button class="group w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 rounded-xl transition-all text-left hover:bg-white/10 hover:text-white">
+             <button
+                    @mousemove="(e) => handleMagnetMove(e, 'settings')"
+                    @mouseleave="resetMagnet"
+                    class="group w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 rounded-xl transition-all text-left hover:bg-white/10 hover:text-white"
+                    :style="activeMagnet === 'settings'
+                      ? { transform: `translate(${magneticOffset.x}px, ${magneticOffset.y}px)` }
+                      : {}"
+                  >
                 <Settings class="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
                 Account Settings
               </button>
 
-              <button 
-                @click="handleLogout" 
-                class="group w-full flex items-center gap-3 p-2.5 text-sm font-bold text-red-400 rounded-xl transition-all text-left mt-1 hover:bg-red-500/10 hover:text-red-300"
-              >
+             <button 
+                  @click="handleLogout"
+                  @mousemove="(e) => handleMagnetMove(e, 'logout')"
+                  @mouseleave="resetMagnet"
+                  class="group w-full flex items-center gap-3 p-2.5 text-sm font-bold text-red-400 rounded-xl transition-all text-left mt-1 hover:bg-red-500/10 hover:text-red-300"
+                  :style="activeMagnet === 'logout'
+                    ? { transform: `translate(${magneticOffset.x}px, ${magneticOffset.y}px)` }
+                    : {}"
+                >
                 <LogOut class="w-4 h-4 group-hover:scale-110 transition-transform" />
                 Log Out
               </button>
@@ -1361,7 +1421,7 @@ onUnmounted(() => {
        <div 
           class="absolute top-1 bottom-1 w-12  
                 bg-white/20 backdrop-blur-xl
-                transition-all duration-800 ease-[cubic-bezier(0.22,1,0.36,1)]"
+                transition-all duration-600 ease-[cubic-bezier(0.22,1,0.36,1)]"
           :style="sliderStyle"
         ></div>
 
@@ -1371,25 +1431,43 @@ onUnmounted(() => {
           :key="item.key"
           :ref="el => navRefs[index] = el"
           @mouseenter="hoverIndex = index"
-          @mouseleave="hoverIndex = null"
+          @mousemove="(e) => handleNavMagnet(e, index)"
+          @mouseleave="() => { hoverIndex = null; resetNavMagnet(index) }"
           @click="item.action"
           class="relative z-10 p-3 rounded-full cursor-pointer group transition-all"
         >
           
           <!-- ICONS -->
-          <Home v-if="item.key === 'home'" class="w-6 h-6 icon-bounce"
-            :class="currentView === 'home' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
-
-          <Search v-if="item.key === 'search'" class="w-6 h-6 icon-bounce"
+         <Home 
+            v-if="item.key === 'home'" 
+            class="w-6 h-6 transition-transform duration-200 ease-out "
+            :style="activeMagnetIndex === index 
+            ? { transform: `translate(${magneticOffsets[index]?.x || 0}px, ${magneticOffsets[index]?.y || 0}px) scale(1.05)` } 
+            : {}"
+            :class="currentView === 'home' ? 'text-white' : 'text-gray-400 group-hover:text-white'" 
+          />
+          <Search v-if="item.key === 'search'" class="w-6 h-6 transition-transform duration-200 ease-out"
+            :style="activeMagnetIndex === index 
+            ? { transform: `translate(${magneticOffsets[index]?.x || 0}px, ${magneticOffsets[index]?.y || 0}px) scale(1.05)` } 
+            : {}"
             :class="isSearchOpen ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'" />
 
-          <Clapperboard v-if="item.key === 'movie'" class="w-6 h-6 icon-bounce"
-            :class="currentView === 'movie' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
+          <Clapperboard v-if="item.key === 'movie'" class="w-6 h-6 transition-transform duration-200 ease-out"
+          :style="activeMagnetIndex === index 
+            ? { transform: `translate(${magneticOffsets[index]?.x || 0}px, ${magneticOffsets[index]?.y || 0}px) scale(1.05)` } 
+            : {}"  
+          :class="currentView === 'movie' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
 
-          <MonitorPlay v-if="item.key === 'tv'" class="w-6 h-6 icon-bounce"
+          <MonitorPlay v-if="item.key === 'tv'" class="w-6 h-6 transition-transform duration-200 ease-out"
+            :style="activeMagnetIndex === index 
+            ? { transform: `translate(${magneticOffsets[index]?.x || 0}px, ${magneticOffsets[index]?.y || 0}px) scale(1.05)` } 
+            : {}"
             :class="currentView === 'tv' ? 'text-white' : 'text-gray-400 group-hover:text-white'" />
 
-          <Bookmark v-if="item.key === 'watchlist'" class="w-6 h-6 icon-bounce"
+          <Bookmark v-if="item.key === 'watchlist'" class="w-6 h-6 transition-transform duration-200 ease-out"
+          :style="activeMagnetIndex === index 
+            ? { transform: `translate(${magneticOffsets[index]?.x || 0}px, ${magneticOffsets[index]?.y || 0}px) scale(1.05)` } 
+            : {}"
             :class="isWatchlistOpen ? 'text-blue-400' : 'text-gray-400 group-hover:text-white'" />
 
         </div>
