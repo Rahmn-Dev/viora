@@ -665,7 +665,7 @@ onUnmounted(() => {
                   <div v-if="selectedMovieInfo.seasons?.length" class="mt-6">
                     <h3 class="text-lg font-bold mb-3 flex items-center gap-2"><span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> Seasons</h3>
                     <div class="flex gap-4 overflow-x-auto pb-2">
-                      <div v-for="season in selectedMovieInfo.seasons.map(s => ({ ...s, media_type: 'tv', season: s.season_number ?? 1, episode: 1, showId:selectedMovieInfo.id}))" :key="season.id" class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300" @click="openPlayer(season)">
+                      <div v-for="season in selectedMovieInfo.seasons.map(s => ({ ...s, media_type: 'tv', season: s.season_number ?? 1, episode: 1, showId:selectedMovieInfo.id, logo_path: selectedMovieInfo.logo_path}))" :key="season.id" class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300" @click="openPlayer(season)">
                         <div class="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg">
                           <img :src="getImageUrl(season.poster_path, 'w300')" class="w-full h-full object-cover" :alt="season.name" />
                           <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 text-center">{{ season.episode_count }} eps</div>
@@ -756,16 +756,34 @@ onUnmounted(() => {
 
     <Transition name="fade">
       <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none" >
-           <div>
-              <img v-if="currentMedia?.logo_path" :src="getImageUrl(currentMedia.logo_path, 'w300')" class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg origin-left" :alt="currentMedia?.title || currentMedia?.name" />
-              <h2 v-else class="text-xl md:text-2xl font-black uppercase  tracking-tighter drop-shadow-md text-white">{{ currentMedia?.title || currentMedia?.name }}</h2>
-           </div>
-           <div class="pointer-events-auto group w-200 h-33 flex justify-end items-start -mt-2 -mr-1" >
-              <button @click="closePlayer" class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer">
-                 <X class="w-10 h-10" />
-              </button>
-           </div>
+       <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
+
+          <!-- 🔴 CLOSE BUTTON (kiri) -->
+          <div class="pointer-events-auto group flex justify-start items-start">
+            <button 
+              @click="closePlayer" 
+              class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer"
+            >
+              <X class="w-10 h-10" />
+            </button>
+          </div>
+
+          <!-- 🟢 LOGO / TITLE (kanan) -->
+          <div class="flex justify-end text-right">
+            <img 
+              v-if="currentMedia?.logo_path" 
+              :src="getImageUrl(currentMedia.logo_path, 'w300')" 
+              class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg" 
+              :alt="currentMedia?.title || currentMedia?.name" 
+            />
+            <h2 
+              v-else 
+              class="text-xl md:text-2xl font-black uppercase tracking-tighter drop-shadow-md text-white"
+            >
+              {{ currentMedia?.title || currentMedia?.name }}
+            </h2>
+          </div>
+
         </div>
         <div v-if="embedUrl" class="w-full h-full">
             <iframe :src="embedUrl" width="100%" height="100%" frameborder="0" allowfullscreen class="w-full h-full"></iframe>
