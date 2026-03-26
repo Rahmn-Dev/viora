@@ -27,8 +27,8 @@ axios.interceptors.response.use(
   }
 );
 
-import { ref, onMounted, onUnmounted, nextTick } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info } from 'lucide-vue-next';
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -63,11 +63,49 @@ const watchlistMovies = ref([]);
 const isWatchlistOpen = ref(false); 
 const watchlist = ref(new Set()); 
 
-// --- MOVIE DETAIL / INFO STATE ---
 const isInfoOpen = ref(false);
 const selectedMovieInfo = ref(null);
 const similarMovies = ref([]);
 const isFetchingInfo = ref(false);
+
+// --- BROWSE PAGE STATE ---
+const currentView = ref('home'); 
+const browseItems = ref([]);
+const isBrowseLoading = ref(false);
+const isFetchingMore = ref(false);
+const browsePage = ref(1);
+
+// --- DYNAMIC HERO & CATEGORY STATE ---
+const movieHeroMoviesList = ref([]);
+const movieCategoriesList = ref([]);
+const tvHeroMoviesList = ref([]);
+const tvCategoriesList = ref([]);
+
+// --- FILTER STATE ---
+const genresList = ref([]);
+const filters = ref({
+  genre: '',
+  year: '',
+  sortBy: 'popularity.desc'
+});
+const availableYears = computed(() => {
+  const years = [];
+  for (let i = 2026; i >= 2000; i--) years.push(i);
+  return years;
+});
+
+// Computed properties to dynamically switch Hero & Categories based on View
+const activeHeroMovies = computed(() => {
+  if (currentView.value === 'movie') return movieHeroMoviesList.value;
+  if (currentView.value === 'tv') return tvHeroMoviesList.value;
+  return heroMovies.value;
+});
+
+const activeCategories = computed(() => {
+  if (currentView.value === 'movie') return movieCategoriesList.value;
+  if (currentView.value === 'tv') return tvCategoriesList.value;
+  return movieCategories.value;
+});
 
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const WYZIE_API_KEY = import.meta.env.VITE_WYZIE_API_KEY; 
@@ -89,8 +127,9 @@ const fetchLogo = async (id, type = 'movie') => {
 
 const enrichMoviesWithLogos = async (movies) => {
   return Promise.all(movies.map(async (m) => {
-    const logoPath = await fetchLogo(m.id, m.media_type || 'movie');
-    return { ...m, logo_path: logoPath };
+    const movieId = m.tmdb_id || m.id;
+    const logoPath = await fetchLogo(movieId, m.media_type || 'movie');
+    return { ...m, id: movieId, logo_path: logoPath };
   }));
 };
 
@@ -104,7 +143,7 @@ const fetchUserData = async () => {
         historyData.map(async (item) => {
           const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
           return { ...tmdbRes.data, media_type: item.media_type, progress_percentage: item.progress_percentage,
-            season: item.season,episode: item.episode
+            season: item.season, episode: item.episode
            };
         })
       );
@@ -141,11 +180,133 @@ const fetchAllData = async () => {
   } catch (error) { console.error(error); } finally { isLoading.value = false; }
 };
 
-// --- FUNGSI MOVIE DETAIL / INFO MODAL ---
+// --- DATA FETCHING FOR MOVIE & TV SPECIFIC PAGES ---
+const fetchMoviePageData = async () => {
+  if (movieCategoriesList.value.length > 0) return; // Cache check
+  try {
+    const [nowPlaying, popular, topRated, upcoming] = await Promise.all([
+      axios.get(`${BASE_URL}/movie/now_playing?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/movie/popular?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/movie/top_rated?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/movie/upcoming?api_key=${API_KEY}`)
+    ]);
+
+    const popData = popular.data.results.map(m => ({...m, media_type: 'movie'}));
+    movieHeroMoviesList.value = await enrichMoviesWithLogos(popData.slice(0, 8));
+
+    const cats = [
+      { id: 'm1', title: 'Now Playing', raw: nowPlaying.data.results.slice(0, 15).map(m => ({...m, media_type: 'movie'})) },
+      { id: 'm2', title: 'Popular Movies', raw: popData.slice(8, 20) },
+      { id: 'm3', title: 'Top Rated', raw: topRated.data.results.slice(0, 15).map(m => ({...m, media_type: 'movie'})) },
+      { id: 'm4', title: 'Upcoming', raw: upcoming.data.results.slice(0, 15).map(m => ({...m, media_type: 'movie'})) }
+    ];
+    movieCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, movies: await enrichMoviesWithLogos(cat.raw) })));
+  } catch(e) { console.error(e); }
+};
+
+const fetchTvPageData = async () => {
+  if (tvCategoriesList.value.length > 0) return; // Cache check
+  try {
+    const [airingToday, onTheAir, popular, topRated] = await Promise.all([
+      axios.get(`${BASE_URL}/tv/airing_today?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/tv/on_the_air?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/tv/popular?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}`)
+    ]);
+
+    const popData = popular.data.results.map(m => ({...m, media_type: 'tv'}));
+    tvHeroMoviesList.value = await enrichMoviesWithLogos(popData.slice(0, 8));
+
+    const cats = [
+      { id: 't1', title: 'Airing Today', raw: airingToday.data.results.slice(0, 15).map(m => ({...m, media_type: 'tv'})) },
+      { id: 't2', title: 'On The Air', raw: onTheAir.data.results.slice(0, 15).map(m => ({...m, media_type: 'tv'})) },
+      { id: 't3', title: 'Popular Series', raw: popData.slice(8, 20) },
+      { id: 't4', title: 'Top Rated', raw: topRated.data.results.slice(0, 15).map(m => ({...m, media_type: 'tv'})) }
+    ];
+    tvCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, movies: await enrichMoviesWithLogos(cat.raw) })));
+  } catch(e) { console.error(e); }
+};
+
+const fetchGenres = async () => {
+  try {
+    const type = currentView.value === 'tv' ? 'tv' : 'movie';
+    const res = await axios.get(`${BASE_URL}/genre/${type}/list?api_key=${API_KEY}`);
+    genresList.value = res.data.genres;
+  } catch(e) { console.error(e); }
+};
+
+const applyFilters = async () => {
+  isBrowseLoading.value = true;
+  browseItems.value = [];
+  browsePage.value = 1;
+  await loadMoreBrowseItems();
+  isBrowseLoading.value = false;
+};
+
+const changeView = async (viewType) => {
+  if (currentView.value === viewType) return; // Prevent reload if same view
+  
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  currentView.value = viewType;
+  
+  if(heroTimer) clearInterval(heroTimer);
+  
+  if (viewType === 'home') {
+    currentHeroIndex.value = 0;
+    startHeroCarousel();
+    return;
+  }
+  
+  // Reset filter when switching Movie/TV
+  filters.value = { genre: '', year: '', sortBy: 'popularity.desc' };
+  isBrowseLoading.value = true;
+  browseItems.value = [];
+  browsePage.value = 1;
+
+  // Load specific Hero and Category Rows
+  if (viewType === 'movie') await fetchMoviePageData();
+  if (viewType === 'tv') await fetchTvPageData();
+
+  // Reset and restart Carousel for the new view
+  currentHeroIndex.value = 0;
+  startHeroCarousel();
+  
+  // Load Filters and Grid
+  await fetchGenres();
+  await applyFilters();
+  isBrowseLoading.value = false;
+};
+
+const loadMoreBrowseItems = async () => {
+  if (isFetchingMore.value) return;
+  isFetchingMore.value = true;
+  
+  try {
+    const type = currentView.value === 'tv' ? 'tv' : 'movie';
+    const yearParam = type === 'movie' ? 'primary_release_year' : 'first_air_date_year';
+
+    let endpoint = `${BASE_URL}/discover/${type}?api_key=${API_KEY}&page=${browsePage.value}&sort_by=${filters.value.sortBy}`;
+    if (filters.value.genre) endpoint += `&with_genres=${filters.value.genre}`;
+    if (filters.value.year) endpoint += `&${yearParam}=${filters.value.year}`;
+
+    const res = await axios.get(endpoint);
+    
+    const rawItems = res.data.results.slice(0, 15);
+    const enrichedItems = await enrichMoviesWithLogos(rawItems.map(item => ({...item, media_type: currentView.value})));
+    
+    browseItems.value = [...browseItems.value, ...enrichedItems];
+    browsePage.value++;
+  } catch (error) {
+    console.error("Failed to load more items", error);
+  } finally {
+    isFetchingMore.value = false;
+  }
+};
+
 const openInfo = async (movie) => {
   isInfoOpen.value = true;
   isFetchingInfo.value = true;
-  selectedMovieInfo.value = movie; // Optimistic set
+  selectedMovieInfo.value = movie; 
   similarMovies.value = [];
 
   try {
@@ -160,10 +321,11 @@ const openInfo = async (movie) => {
       ...movie,
       ...detailsRes.data,
       cast: creditsRes.data.cast.slice(0, 6),
-      production_companies: detailsRes.data.production_companies || [] // <--- ini penting
+      production_companies: detailsRes.data.production_companies || [] 
     };
 
-    similarMovies.value = similarRes.data.results.slice(0, 6).map(s => ({...s, media_type: type}));
+    const rawSimilar = similarRes.data.results.slice(0, 12).map(s => ({...s, media_type: type}));
+    similarMovies.value = await enrichMoviesWithLogos(rawSimilar);
 
   } catch (err) {
     console.error("Failed to fetch info details", err);
@@ -177,7 +339,7 @@ const closeInfo = () => {
   setTimeout(() => {
     selectedMovieInfo.value = null;
     similarMovies.value = [];
-  }, 300); // Bersihkan state setelah animasi hilang
+  }, 300); 
 };
 
 const toggleSearch = () => {
@@ -227,7 +389,8 @@ const performSearch = async () => {
   isSearching.value = true;
   try {
     const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false`);
-    searchResults.value = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv').slice(0, 6);
+    const rawResults = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv').slice(0, 15);
+    searchResults.value = await enrichMoviesWithLogos(rawResults);
   } catch (error) { console.error(error); } finally { isSearching.value = false; }
 };
 
@@ -239,8 +402,8 @@ const onSearchInput = () => {
 const fetchWatchlist = async () => {
   try {
     const res = await axios.get('/api/watchlist/');
-    watchlist.value = new Set(res.data.map(item => item.id));
-    watchlistMovies.value = res.data;
+    watchlist.value = new Set(res.data.map(item => item.id || item.tmdb_id));
+    watchlistMovies.value = await enrichMoviesWithLogos(res.data);
   } catch (err) { console.error("gagal ambil watchlist", err); }
 };
 
@@ -301,8 +464,6 @@ const openPlayer = (movie) => {
   currentMedia.value = movie;
   
   let startTime = 0;
-  
-  // Ambil ID yang benar (karena data Seasons di Modal Info pakai showId)
   const tmdbId = movie.showId || movie.id;
   const history = watchHistoryMovies.value.find(m => m.id === tmdbId);
   
@@ -310,31 +471,25 @@ const openPlayer = (movie) => {
   let targetEpisode = movie.episode;
 
   if (history) {
-    // Jika tidak ada season/episode yang dipilih (misal klik dari Home), pakai data dari history
     if (!targetSeason) targetSeason = history.season;
     if (!targetEpisode) targetEpisode = history.episode;
-    
-    // Ambil detik terakhir HANYA JIKA memutar season/episode yang sama dengan di history
     if ((!movie.season || movie.season === history.season) && (!movie.episode || movie.episode === history.episode)) {
-      // Jaga-jaga jika di DB pakai progress_percentage atau current_time_seconds
       startTime = Math.floor(history.current_time_seconds || history.progress_percentage || 0); 
     }
   }
 
-  // Fallback terakhir kalau ternyata film baru dan belum ada di history
   targetSeason = targetSeason || 1;
   targetEpisode = targetEpisode || 1;
 
   if (type === 'movie') {
     embedUrl.value = `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
   } else {
-    // Generate URL TV menggunakan targetSeason dan targetEpisode yang sudah divalidasi
-    embedUrl.value = `https://www.vidking.net/embed/tv/${tmdbId}/${targetSeason}/${targetEpisode}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
+    embedUrl.value = `https://www.vidking.net/embed/tv/${tmdbId}/${targetSeason}/${targetEpisode}?autoPlay=true&t=${startTime}&nextEpisode=true&episodeSelector=true&lan=id,en&key=${WYZIE_API_KEY}`;
   }
 
   isPlayerOpen.value = true;
   if(heroTimer) clearInterval(heroTimer); 
-  if(isInfoOpen.value) closeInfo(); // Tutup modal info jika dari sana
+  if(isInfoOpen.value) closeInfo(); 
 };
 
 const closePlayer = () => {
@@ -363,7 +518,6 @@ const handlePlayerMessage = async (event) => {
               progress_percentage: progress, current_time_seconds: currentTime, total_duration: duration,
               is_finished: playerEvent === 'ended'
             });
-            // await fetchUserData()
          } catch (e) { console.error('Failed to save progress', e); }
        }
     }
@@ -376,6 +530,13 @@ const handleScroll = () => {
     window.requestAnimationFrame(() => {
       isScrolled.value = window.scrollY > 50;
       ticking = false;
+      
+      if (currentView.value !== 'home' && !isBrowseLoading.value && !isFetchingMore.value) {
+        const bottomOfWindow = document.documentElement.scrollTop + window.innerHeight >= document.documentElement.offsetHeight - 500;
+        if (bottomOfWindow) {
+          loadMoreBrowseItems();
+        }
+      }
     });
     ticking = true;
   }
@@ -395,7 +556,9 @@ const handleKeydown = (e) => {
 const startHeroCarousel = () => {
   if(heroTimer) clearInterval(heroTimer);
   heroTimer = setInterval(() => {
-    currentHeroIndex.value = (currentHeroIndex.value + 1) % heroMovies.value.length;
+    if(activeHeroMovies.value.length > 0) {
+      currentHeroIndex.value = (currentHeroIndex.value + 1) % activeHeroMovies.value.length;
+    }
   }, 8000);
 };
 
@@ -420,21 +583,13 @@ onUnmounted(() => {
     
     <Transition name="fade">
       <div v-if="isInfoOpen" class="fixed inset-0 z-[150] bg-black/80  overflow-y-auto flex justify-center items-start pt-10 pb-10 hide-scrollbar" @click.self="closeInfo">
-        <div class=" backdrop-blur-sm w-full max-w-4xl  rounded-2xl shadow-2xl overflow-hidden relative" @click.stop style="
-    background: #2525256b;
-">
-          
+        <div class=" backdrop-blur-sm w-full max-w-4xl  rounded-2xl shadow-2xl overflow-hidden relative" @click.stop style="background: #2525256b;">
           <button @click="closeInfo" class="absolute top-4 right-4 z-50 p-2 bg-black/60 hover:bg-white/20 rounded-full text-white transition-colors">
             <X class="w-6 h-6" />
           </button>
 
           <div class="relative w-full aspect-video md:aspect-[21/9] bg-black">
-            <img 
-              v-if="selectedMovieInfo?.backdrop_path || selectedMovieInfo?.poster_path" 
-              :src="getImageUrl(selectedMovieInfo.backdrop_path || selectedMovieInfo.poster_path, selectedMovieInfo.backdrop_path ? 'original' : 'w500')" 
-              :class="selectedMovieInfo.backdrop_path ? 'object-cover' : 'object-contain'" 
-              class="w-full h-full opacity-80"
-            />
+            <img v-if="selectedMovieInfo?.backdrop_path || selectedMovieInfo?.poster_path" :src="getImageUrl(selectedMovieInfo.backdrop_path || selectedMovieInfo.poster_path, selectedMovieInfo.backdrop_path ? 'original' : 'w500')" :class="selectedMovieInfo.backdrop_path ? 'object-cover' : 'object-contain'" class="w-full h-full opacity-80" />
             <div class="absolute inset-0 bg-gradient-to-t from-[#18181b] via-[#18181b]/30 to-transparent"></div>
 
             <div class="absolute bottom-8 left-8 right-8">
@@ -449,7 +604,7 @@ onUnmounted(() => {
                 </Button>
                 <Button @click="handleWatchlistToggle(selectedMovieInfo)" variant="outline" class="bg-black/40 backdrop-blur-md border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors">
                   <Check v-if="watchlist.has(selectedMovieInfo?.id)" class="w-5 h-5 mr-2 text-green-400" />
-                  <Plus v-else class="w-5 h-5 mr-2" />
+                  <Bookmark v-else class="w-5 h-5 mr-2" />
                   My List
                 </Button>
               </div>
@@ -464,81 +619,43 @@ onUnmounted(() => {
                 <span v-if="selectedMovieInfo?.runtime" class="border border-gray-600 px-1.5 py-0.5 rounded">{{ selectedMovieInfo.runtime }} min</span>
                 <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">{{ selectedMovieInfo?.media_type === 'tv' ? 'Series' : 'HD' }}</span>
               </div>
-              <p class="text-[15px] md:text-base leading-relaxed text-gray-200">
-                {{ selectedMovieInfo?.overview || 'No overview available.' }}
-              </p>
+              <p class="text-[15px] md:text-base leading-relaxed text-gray-200">{{ selectedMovieInfo?.overview || 'No overview available.' }}</p>
             </div>
 
             <div class="space-y-6 text-sm">
-
-                <!-- Genres -->
                 <div v-if="selectedMovieInfo?.genres?.length">
                   <span class="text-white font-bold block mb-1">Genres</span>
                   <div class="flex flex-wrap gap-2 mt-1">
-                    <span 
-                      v-for="g in selectedMovieInfo.genres" 
-                      :key="g.id" 
-                      class="bg-white/10 text-gray-300 px-2.5 py-1 rounded text-xs font-medium"
-                    >
-                      {{ g.name }}
-                    </span>
+                    <span v-for="g in selectedMovieInfo.genres" :key="g.id" class="bg-white/10 text-gray-300 px-2.5 py-1 rounded text-xs font-medium">{{ g.name }}</span>
                   </div>
                 </div>
 
-                <!-- Rating & Popularity -->
                 <div class="flex gap-3 mt-2">
-                  <!-- Rating -->
                   <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
                     <Star class="w-4 h-4 text-yellow-400" />
                     <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.vote_average }}/10</span>
                   </div>
-
-                  <!-- Popularity -->
                   <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
                     <Flame class="w-4 h-4 text-red-400" />
-                    <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.popularity.toFixed(1) }}</span>
+                    <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.popularity?.toFixed(1) }}</span>
                   </div>
                 </div>
-
               </div>
-            
           </div>
+
           <div class="p-8 pt-0">
               <div class="space-y-12 text-sm">
-                <!-- Seasons Section -->
                   <div v-if="selectedMovieInfo.seasons?.length" class="mt-6">
-                    <h3 class="text-lg font-bold mb-3 flex items-center gap-2">
-                      <span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> Seasons
-                    </h3>
-                    
+                    <h3 class="text-lg font-bold mb-3 flex items-center gap-2"><span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> Seasons</h3>
                     <div class="flex gap-4 overflow-x-auto pb-2">
-                      <div 
-                        v-for="season in selectedMovieInfo.seasons.map(s => ({ 
-                            ...s, 
-                            media_type: 'tv', 
-                            season: s.season_number ?? 1,  // default 1 kalau null
-                            episode: 1,
-                            showId:selectedMovieInfo.id                      // default episode 1
-                          }))" 
-                          :key="season.id" 
-                          class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300"
-                          @click="openPlayer(season)"
-                          >
+                      <div v-for="season in selectedMovieInfo.seasons.map(s => ({ ...s, media_type: 'tv', season: s.season_number ?? 1, episode: 1, showId:selectedMovieInfo.id}))" :key="season.id" class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300" @click="openPlayer(season)">
                         <div class="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg">
-                          <img 
-                            :src="getImageUrl(season.poster_path, 'w300')" 
-                            class="w-full h-full object-cover" 
-                            :alt="season.name"
-                          />
-                          <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 text-center">
-                            {{ season.episode_count }} eps
-                          </div>
+                          <img :src="getImageUrl(season.poster_path, 'w300')" class="w-full h-full object-cover" :alt="season.name" />
+                          <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 text-center">{{ season.episode_count }} eps</div>
                         </div>
                         <h3 class="text-xs font-semibold mt-1 line-clamp-2 text-white"> {{ season.season_number }}</h3>
                         <h4 class="text-xs font-semibold mt-1 line-clamp-2 text-white">{{ season.name }}</h4>
-                        <div class="text-[10px] text-green-400 mt-0.5 font-bold">
-                          {{ season.vote_average ? season.vote_average.toFixed(1) : '-' }}
-                        </div>
+                        <div class="text-[10px] text-green-400 mt-0.5 font-bold">{{ season.vote_average ? season.vote_average.toFixed(1) : '-' }}</div>
                       </div>
                     </div>
                   </div>
@@ -549,79 +666,46 @@ onUnmounted(() => {
           <div class="space-y-12 text-sm">
             <div v-if="selectedMovieInfo?.cast?.length" class="space-y-12">
               <h4 class="text-white font-bold mb-2">Cast</h4>
-
-              <!-- Container horizontal scroll -->
               <div class="flex gap-4 overflow-x-auto py-2">
-                <div 
-                  v-for="actor in selectedMovieInfo.cast" 
-                  :key="actor.id" 
-                  class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow
-                            hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-1"
-                >
-                  <!-- Foto actor -->
+                <div v-for="actor in selectedMovieInfo.cast" :key="actor.id" class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-1">
                   <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
-                    <img 
-                      :src="getImageUrl(actor.profile_path, 'w185')" 
-                      :alt="actor.name" 
-                      class="w-full h-full object-cover"
-                    />
+                    <img :src="getImageUrl(actor.profile_path, 'w185')" :alt="actor.name" class="w-full h-full object-cover" />
                   </div>
-                  <!-- Nama actor -->
                   <div class="flex-1">
-                    <span class="text-gray-300 text-sm font-medium leading-snug break-words">
-                      {{ actor.name }}
-                    </span>
+                    <span class="text-gray-300 text-sm font-medium leading-snug break-words">{{ actor.name }}</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-    <div class="p-8 pt-0">
-  <div class="space-y-12 text-sm">
-    <div v-if="selectedMovieInfo?.production_companies?.length">
-      <h4 class="text-white font-bold mb-2">Production Companies</h4>
 
-      <!-- horizontal scroll container -->
-      <div class="flex gap-4 overflow-x-auto py-2">
-        <!-- loop hanya company yang punya logo_path -->
-        <template v-for="company in selectedMovieInfo.production_companies" :key="company.id || company.name">
-          <div 
-            v-if="company.logo_path"
-            class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow
-                   hover:scale-105 hover:shadow-lg bg-white border border-white/20 rounded-2xl p-5"
-          >
-            <div >
-              <img 
-                :src="`https://image.tmdb.org/t/p/w185${company.logo_path}`" 
-                :alt="company.name" 
-              
-              />
+        <div class="p-8 pt-0">
+          <div class="space-y-12 text-sm">
+            <div v-if="selectedMovieInfo?.production_companies?.length">
+              <h4 class="text-white font-bold mb-2">Production Companies</h4>
+              <div class="flex gap-4 overflow-x-auto py-2">
+                <template v-for="company in selectedMovieInfo.production_companies" :key="company.id || company.name">
+                  <div v-if="company.logo_path" class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow hover:scale-105 hover:shadow-lg bg-white border border-white/20 rounded-2xl p-5">
+                    <div >
+                      <img :src="`https://image.tmdb.org/t/p/w185${company.logo_path}`" :alt="company.name" />
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+            <div v-else class="bg-white/20 backdrop-blur-md border border-white/30 rounded-xl p-4 flex justify-center items-center" style="box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);">
+              <p>No company logo available</p>
             </div>
           </div>
-        </template>
-      </div>
-    </div>
-
-    <div v-else 
-         class="bg-white/20 backdrop-blur-md border border-white/30 rounded-xl p-4 flex justify-center items-center"
-         style="box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);">
-      <p>No company logo available</p>
-    </div>
-  </div>
-</div>
+        </div>
           
-
-        
           <div class="p-8 pt-0" v-if="similarMovies.length">
             <h3 class="text-xl font-bold mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> More Like This</h3>
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div v-for="sim in similarMovies" :key="sim.id" class="bg-[#2b2b30]/50 rounded-xl overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-300 shadow-lg" @click="openInfo(sim)">
                 <div class="relative aspect-video">
                   <img :src="getImageUrl(sim.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80" />
-                  <!-- <img :src="getImageUrl(sim.logo_path, 'w150')" class="w-full h-full object-cover opacity-80" />
-                    -->
-            
                   <div class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/40 transition-opacity">
                     <Play class="w-10 h-10 text-white fill-current drop-shadow-lg" @click.stop="openPlayer(sim)" />
                   </div>
@@ -631,10 +715,12 @@ onUnmounted(() => {
                 </div>
                 <div class="p-3">
                   <div class="flex justify-between items-start mb-1">
-                    <h4 class="font-bold text-sm line-clamp-1 flex-1 text-white">{{ sim.title || sim.name }}</h4>
+                    <img v-if="sim.logo_path" :src="getImageUrl(sim.logo_path, 'w300')" class="max-h-[30px] max-w-[120px] object-contain drop-shadow-md origin-left flex-1" />
+                    <h4 v-else class="font-bold text-sm line-clamp-1 flex-1 text-white">{{ sim.title || sim.name }}</h4>
+                    
                     <button @click.stop="handleWatchlistToggle(sim)" class="ml-2 border border-white/30 rounded-full p-1 hover:bg-white/10 transition">
                       <Check v-if="watchlist.has(sim.id)" class="w-3 h-3 text-green-400" />
-                      <Plus v-else class="w-3 h-3 text-white" />
+                      <Bookmark v-else class="w-3 h-3 text-white" />
                     </button>
                   </div>
                   <div class="text-[10px] text-gray-400 font-bold mt-1">
@@ -689,7 +775,7 @@ onUnmounted(() => {
             <div v-for="movie in watchlistMovies" :key="movie.id" class="relative aspect-video md:aspect-[2/3] rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
               <img :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-110" />
 
-              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end">
+              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end" style="     align-items: center; ">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                   <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-2 drop-shadow-md">{{ movie.title || movie.name }}</h4>
@@ -702,7 +788,7 @@ onUnmounted(() => {
                 </button>
                 <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80 backdrop-blur-md rounded-full transition-colors border border-white/20">
                   <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
-                  <Plus v-else class="w-4 h-4 text-white" />
+                  <Bookmark v-else class="w-4 h-4 text-white" />
                 </button>
               </div>
 
@@ -742,7 +828,9 @@ onUnmounted(() => {
                   <img :src="getImageUrl(item.poster_path || item.backdrop_path, 'w185')" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
                 </div>
                 <div class="flex-1 min-w-0">
-                  <h4 class="text-white font-bold text-lg leading-tight group-hover:text-blue-500 transition-colors truncate">{{ item.title || item.name }}</h4>
+                  <img v-if="item.logo_path" :src="getImageUrl(item.logo_path, 'w300')" class="max-h-[30px] max-w-[150px] object-contain drop-shadow-md mb-1 origin-left" />
+                  <h4 v-else class="text-white font-bold text-lg leading-tight group-hover:text-blue-500 transition-colors truncate">{{ item.title || item.name }}</h4>
+                  
                   <div class="flex items-center gap-3 text-xs text-gray-400 mt-2 font-medium">
                     <span class="bg-white/10 px-2 py-0.5 rounded text-white tracking-wide">{{ item.media_type === 'tv' ? 'Series' : 'Movie' }}</span>
                     <span>{{ (item.release_date || item.first_air_date)?.substring(0,4) }}</span>
@@ -759,7 +847,7 @@ onUnmounted(() => {
                   </button>
                   <button @click.stop="handleWatchlistToggle(item, item.media_type)" class="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-blue-500/20 transition">
                     <Check v-if="watchlist.has(item.id)" class="w-4 h-4 text-green-400" />
-                    <Plus v-else class="w-4 h-4 text-white" />
+                    <Bookmark v-else class="w-4 h-4 text-white" />
                   </button>
                 </div>
               </div>
@@ -823,7 +911,7 @@ onUnmounted(() => {
     </Transition>
 
     <header :class="['fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12', isScrolled ? 'backdrop-blur-sm py-3 border-b border-white/5 bg-black/20 shadow-2xl' : 'bg-transparent py-8']">
-      <h1 class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
+      <h1 @click="changeView('home')" class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500" :class="isScrolled ? 'text-2xl' : 'text-4xl'">
         <span class="text-white">V</span>
         <span class="overflow-hidden transition-all duration-500" :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">IORA</span>
         <span class="text-blue-500">.</span>
@@ -846,7 +934,7 @@ onUnmounted(() => {
     <div v-else>
       <section class="relative w-full h-[90vh] lg:h-[100vh] overflow-hidden bg-black">
         <transition-group name="hero-fade">
-          <div v-for="(movie, index) in heroMovies" :key="movie.id" v-show="index === currentHeroIndex" class="absolute inset-0">
+          <div v-for="(movie, index) in activeHeroMovies" :key="movie.id" v-show="index === currentHeroIndex" class="absolute inset-0">
             <img :src="getImageUrl(movie.backdrop_path, 'original')" class="w-full h-full object-cover opacity-60 scale-100 transition-transform duration-[10s]" :class="index === currentHeroIndex ? 'scale-110' : 'scale-100'" />
             
             <div class="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#0b1220]/30 to-transparent"></div>
@@ -868,31 +956,19 @@ onUnmounted(() => {
               </p>
 
               <div class="flex items-center gap-4">
-                <Button 
-                  @click="openPlayer(movie)" 
-                  size="lg" 
-                  class="bg-white text-black hover:bg-blue-500 hover:text-white font-black px-10 h-12 rounded-xl transition-transform transition-opacity shadow-2xl"
-                >
+                <Button @click="openPlayer(movie)" size="lg" class="bg-white text-black hover:bg-blue-500 hover:text-white font-black px-10 h-12 rounded-xl transition-transform transition-opacity shadow-2xl">
                   <Play class="w-5 h-5  fill-current" /> 
                   <span class="hidden sm:inline">Play</span>
                 </Button>
 
-                <Button 
-                  @click="openInfo(movie)" 
-                  size="lg" 
-                  class="bg-gray-500/40 hover:bg-white/20 text-white font-black px-10 h-12 rounded-xl transition-all shadow-2xl "
-                >
+                <Button @click="openInfo(movie)" size="lg" class="bg-gray-500/40 hover:bg-white/20 text-white font-black px-10 h-12 rounded-xl transition-all shadow-2xl ">
                   <Info class="w-5 h-5" /> 
                   <span class="hidden sm:inline">More Info</span>
                 </Button>
 
-                <Button 
-                  @click="handleWatchlistToggle(movie)" 
-                  variant="outline" 
-                  class="bg-black/40 backdrop-blur-md border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors"
-                >
+                <Button @click="handleWatchlistToggle(movie)" variant="outline" class="bg-black/40 backdrop-blur-md border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors">
                   <Check v-if="watchlist.has(movie?.id)" class="w-5 h-5 mr-2 text-green-400" />
-                  <Plus v-else class="w-5 h-5 " />
+                  <Bookmark v-else class="w-5 h-5 " />
                   <span class="hidden sm:inline">My List</span>
                 </Button>
               </div>
@@ -902,163 +978,151 @@ onUnmounted(() => {
       </section>
 
       <main class="relative z-20 -mt-20 space-y-10 pb-20">
-        
        <section v-if="isLoggedIn && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
-
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
-            <div 
-              v-for="movie in watchHistoryMovies" 
-              :key="movie.id"
-              @click="openPlayer(movie)"
-              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
-            >
-
-              <img 
-                :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" 
-                class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
-              />
-
+            <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
+              <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
               <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                   <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
-
                 <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-
-                  <!-- IMDb Liquid Glass -->
-                  <!-- <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
-                              bg-white/20  border border-white/20
-                              flex items-center gap-1 shadow-md">
-                    IMDb {{ movie.vote_average?.toFixed(1) }}
-                  </div> -->
-
-                  <!-- Tahun -->
-                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
-                              bg-white/20  border border-white/20 shadow-md">
+                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-white/20  border border-white/20 shadow-md">
                   <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
                  </div> 
-
-                  <!-- <div class=" backdrop-blur-sm px-1.5 py-0.5 rounded-md text-white text-[11px]
-                              bg-white/20  border border-white/20
-                              flex items-center gap-1 shadow-md">
-                    <Star class="w-3 h-3 opacity-80" />
-                    <span class=" text-[12px]"> {{ movie.vote_average?.toFixed(1) }}</span>
-                  </div> -->
-                  <!-- Votes Liquid Glass -->
-                  <!-- <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
-                              bg-white/20  border border-white/20 shadow-md">
-                    <Flame class="w-3 h-3 opacity-80" />
-                    <span>{{ movie.vote_count }}</span>
-                  </div> -->
-
                 </div>
               </div>
-
               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80">
                 <div class="h-full bg-blue-500" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
               </div>
-
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
                 <div class="w-14 h-14 bg-white/10 rounded-full backdrop-blur-sm flex items-center justify-center border border-white/30">
                   <Play class="w-6 h-6 text-white fill-current" />
                 </div>
               </div>
-
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
-                  <Info class="w-4 h-4 text-white" />
-                </button>
-                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors">
-                  <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
-                  <Plus v-else class="w-4 h-4 text-white" />
-                </button>
-                <button @click.stop="handleRemoveHistory(movie)" class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20 transition-colors">
-                  <X class="w-4 h-4 text-white" />
-                </button>
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-4 h-4 text-white" /></button>
+                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Bookmark v-else class="w-4 h-4 text-white" /></button>
+                <button @click.stop="handleRemoveHistory(movie)" class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20 transition-colors"><X class="w-4 h-4 text-white" /></button>
               </div>
-
             </div>
           </div>
         </section>
 
-        <section v-for="category in movieCategories" :key="category.id" class="pl-6 lg:pl-12">
-          <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 ">
-            <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> {{ category.title }}
-          </h3>
-          
+        <section v-for="category in activeCategories" :key="category.id" class="pl-6 lg:pl-12">
+          <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 "><span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> {{ category.title }}</h3>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
-            <div 
-              v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)"
-              class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer"
-            >
+            <div v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
               <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
-
               <div class="absolute inset-0 bg-gradient-to-t  to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                   <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
-
                <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-
-                  <!-- IMDb Liquid Glass -->
-                  
-
-                  <!-- Tahun -->
-                    <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
-                              bg-white/20  border border-white/20 shadow-md">
+                    <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-white/20  border border-white/20 shadow-md">
                   <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
                  </div> 
-                 
-                 <!-- <div class="backdrop-blur-sm px-2 py-0.5 rounded-md text-white text-[11px]
-                              bg-white/20 border border-white/20
-                              flex items-center gap-1 shadow-md">
-                    <Heart class="w-3 h-3 opacity-80" />
-                    <span class="text-[12px]">
-                      {{ movie.vote_average?.toFixed(1) }}
-                    </span>
-                  </div> -->
-                  <!-- Votes Liquid Glass -->
-                  <!-- <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white
-                              bg-white/20  border border-white/20 shadow-md">
-                    <Flame class="w-3 h-3 opacity-80" />
-                    <span>{{ movie.vote_count }}</span>
-                  </div> -->
-
                 </div>
               </div>
               <div class="absolute inset-0 rounded-2xl pointer-events-none bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                 <div class="w-14 h-14 bg-white/10  rounded-full flex backdrop-blur-sm items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
-                    <Play class="w-6 h-6 text-white fill-current" />
-                 </div>
+                 <div class="w-14 h-14 bg-white/10  rounded-full flex backdrop-blur-sm items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-6 h-6 text-white fill-current" /></div>
               </div>
-
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
-                  <Info class="w-4 h-4 text-white" />
-                </button>
-                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors">
-                  <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
-                  <Plus v-else class="w-4 h-4 text-white" />
-                </button>
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-4 h-4 text-white" /></button>
+                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Bookmark v-else class="w-4 h-4 text-white" /></button>
               </div>
-
             </div>
           </div>
         </section>
+
+        <section v-if="currentView !== 'home'" class="px-6 lg:px-12 pt-10">
+            <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 relative z-30">
+              <h2 class="text-4xl font-black tracking-tight flex items-center gap-4">
+                <span class="w-2 h-10 bg-blue-500 rounded-full"></span> 
+                Browse <span class="">{{ currentView === 'movie' ? 'Movies' : 'TV Series' }}</span>
+              </h2>
+
+              <div class="flex flex-wrap items-center gap-3">
+                 <div class="flex items-center bg-white/5 border border-white/10 rounded-xl px-3 py-1 backdrop-blur-md">
+                   <Filter class="w-4 h-4 text-gray-400 mr-2" />
+                   <select v-model="filters.genre" @change="applyFilters" class="bg-transparent text-sm text-white font-medium outline-none cursor-pointer py-2 appearance-none">
+                     <option value="" class="bg-[#18181b]">All Genres</option>
+                     <option v-for="g in genresList" :key="g.id" :value="g.id" class="bg-[#18181b]">{{g.name}}</option>
+                   </select>
+                 </div>
+
+                 <div class="flex items-center bg-white/5 border border-white/10 rounded-xl px-3 py-1 backdrop-blur-md">
+                   <select v-model="filters.year" @change="applyFilters" class="bg-transparent text-sm text-white font-medium outline-none cursor-pointer py-2 appearance-none">
+                     <option value="" class="bg-[#18181b]">All Years</option>
+                     <option v-for="y in availableYears" :key="y" :value="y" class="bg-[#18181b]">{{y}}</option>
+                   </select>
+                 </div>
+
+                 <div class="flex items-center bg-white/5 border border-white/10 rounded-xl px-3 py-1 backdrop-blur-md">
+                   <select v-model="filters.sortBy" @change="applyFilters" class="bg-transparent text-sm text-white font-medium outline-none cursor-pointer py-2 appearance-none">
+                     <option value="popularity.desc" class="bg-[#18181b]">Most Popular</option>
+                     <option value="vote_average.desc" class="bg-[#18181b]">Highest Rated</option>
+                     <option value="primary_release_date.desc" class="bg-[#18181b]">Newest</option>
+                   </select>
+                 </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 auto-rows-max">
+              <div 
+                v-for="(movie, index) in browseItems" :key="movie.id"
+                :class="[
+                   'relative rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer',
+                   index % 9 === 0 ? 'col-span-2 md:col-span-4 lg:col-span-2 aspect-video' : 'col-span-1 aspect-[2/3]'
+                ]"
+                @click="openInfo(movie)"
+              >
+                <img 
+                  :src="getImageUrl(index % 9 === 0 ? (movie.backdrop_path || movie.poster_path) : (movie.poster_path || movie.backdrop_path), index % 9 === 0 ? 'w780' : 'w500')" 
+                  class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-110" 
+                />
+
+                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end" style="     align-items: center; ">
+                  <div class="mb-2">
+                    <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
+                    <h4 v-else class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md">{{ movie.title || movie.name }}</h4>
+                  </div>
+                </div>
+
+                <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                 <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-4 h-4 text-white" /></button>
+                  <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80 backdrop-blur-md rounded-full transition-colors border border-white/20">
+                    <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
+                    <Bookmark v-else class="w-4 h-4 text-white" />
+                  </button>
+                </div>
+
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
+                   <div class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
+                      <Play class="w-5 h-5 text-white fill-current" />
+                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="isBrowseLoading || isFetchingMore" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 mt-6">
+              <Skeleton v-for="i in 12" :key="i" :class="['rounded-2xl bg-white/5 animate-pulse', i % 9 === 1 ? 'col-span-2 md:col-span-4 lg:col-span-2 aspect-video' : 'col-span-1 aspect-[2/3]']" />
+            </div>
+        </section>
+
       </main>
     </div>
 
     <nav class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50">
       <div class="flex items-center gap-2 px-4 py-3 bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]  rounded-full ">
-        <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
-          <Home class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
+        <div @click="changeView('home')" class="p-3 rounded-full transition-transform transition-opacity cursor-pointer group" :class="{'bg-white/20': currentView === 'home', 'hover:bg-white/10': currentView !== 'home'}">
+          <Home class="w-6 h-6 transition-transform transition-opacity" :class="currentView === 'home' ? 'text-white' : 'text-gray-400 group-hover:text-white group-hover:-translate-y-1'" />
         </div>
         
         <div @click="toggleSearch" class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
@@ -1066,11 +1130,11 @@ onUnmounted(() => {
         </div>
         
         <div class="w-px h-8 bg-white/10 mx-1"></div>
-        <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
-          <Clapperboard class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
+        <div @click="changeView('movie')" class="p-3 rounded-full transition-transform transition-opacity cursor-pointer group" :class="{'bg-white/20': currentView === 'movie', 'hover:bg-white/10': currentView !== 'movie'}">
+          <Clapperboard class="w-6 h-6 transition-transform transition-opacity" :class="currentView === 'movie' ? 'text-white' : 'text-gray-400 group-hover:text-white group-hover:-translate-y-1'" />
         </div>
-        <div class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
-          <MonitorPlay class="w-6 h-6 text-gray-400 group-hover:text-white group-hover:-translate-y-1 transition-transform transition-opacity" />
+        <div @click="changeView('tv')" class="p-3 rounded-full transition-transform transition-opacity cursor-pointer group" :class="{'bg-white/20': currentView === 'tv', 'hover:bg-white/10': currentView !== 'tv'}">
+          <MonitorPlay class="w-6 h-6 transition-transform transition-opacity" :class="currentView === 'tv' ? 'text-white' : 'text-gray-400 group-hover:text-white group-hover:-translate-y-1'" />
         </div>
         
         <div @click="toggleWatchlist" class="p-3 rounded-full hover:bg-white/10 transition-transform transition-opacity cursor-pointer group">
