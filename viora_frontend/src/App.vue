@@ -937,8 +937,8 @@ onUnmounted(() => {
           <div v-for="(movie, index) in activeHeroMovies" :key="movie.id" v-show="index === currentHeroIndex" class="absolute inset-0">
             <img :src="getImageUrl(movie.backdrop_path, 'original')" class="w-full h-full object-cover opacity-60 scale-100 transition-transform duration-[10s]" :class="index === currentHeroIndex ? 'scale-110' : 'scale-100'" />
             
-            <div class="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#0b1220]/30 to-transparent"></div>
-            <div class="absolute inset-0 bg-gradient-to-r from-[#09090b] via-[#0b1220]/50 to-transparent"></div>
+            <div class="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#0b1220]/1 to-transparent"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-[#09090b] via-[#0b1220]/1 to-transparent"></div>
 
             <div class="absolute bottom-[15%] left-6 lg:left-12 max-w-2xl space-y-8 z-10">
               <div class="space-y-6">
