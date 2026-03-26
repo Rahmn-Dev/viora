@@ -32,7 +32,9 @@ import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, U
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import Lenis from 'lenis'
+import Lenis from 'lenis';
+
+let lenis;
 
 const mouseX = ref(0)
 const mouseY = ref(0)
@@ -57,7 +59,6 @@ const sliderStyle = computed(() => {
   const index = hoverIndex.value ?? activeIndex.value
   const isHovering = hoverIndex.value !== null
 
-  // fase squash (awal)
   if (isAnimating.value) {
     return {
       transform: `translateX(${index * 56}px) scaleX(2) scaleY(0.2)`,
@@ -65,15 +66,15 @@ const sliderStyle = computed(() => {
     }
   }
 
-  // fase normal (setelah sampai)
   return {
     transform: `translateX(${index * 56}px) scaleX(${isHovering ? 1 : 0.9}) scaleY(0.8)`,
     borderRadius: '20px'
   }
 })
+
 const glassTransform = computed(() => {
-  const rotateX = mouseY.value * -5   // tilt atas bawah
-  const rotateY = mouseX.value * 5    // tilt kiri kanan
+  const rotateX = mouseY.value * -5
+  const rotateY = mouseX.value * 5
   const translateX = mouseX.value * 10
   const translateY = mouseY.value * 10
 
@@ -146,6 +147,11 @@ const searchResults = ref([]);
 const isSearching = ref(false);
 let searchTimeout = null;
 
+// --- SEARCH FILTER STATE ---
+const selectedYear = ref('');
+const selectedGenre = ref('');
+const searchGenres = ref([]);
+
 const isLoggedIn = ref(false);
 const currentUser = ref({ username: '' });
 const isLoginOpen = ref(false);
@@ -168,33 +174,30 @@ const selectedMovieInfo = ref(null);
 const similarMovies = ref([]);
 const isFetchingInfo = ref(false);
 
-// --- BROWSE PAGE STATE ---
 const currentView = ref('home'); 
 const browseItems = ref([]);
 const isBrowseLoading = ref(false);
 const isFetchingMore = ref(false);
 const browsePage = ref(1);
 
-// --- DYNAMIC HERO & CATEGORY STATE ---
 const movieHeroMoviesList = ref([]);
 const movieCategoriesList = ref([]);
 const tvHeroMoviesList = ref([]);
 const tvCategoriesList = ref([]);
 
-// --- FILTER STATE ---
 const genresList = ref([]);
 const filters = ref({
   genre: '',
   year: '',
   sortBy: 'popularity.desc'
 });
+
 const availableYears = computed(() => {
-  const years = [];
-  for (let i = 2026; i >= 2000; i--) years.push(i);
-  return years;
+  const yrs = [];
+  for (let i = 2026; i >= 2000; i--) yrs.push(i);
+  return yrs;
 });
 
-// Computed properties to dynamically switch Hero & Categories based on View
 const activeHeroMovies = computed(() => {
   if (currentView.value === 'movie') return movieHeroMoviesList.value;
   if (currentView.value === 'tv') return tvHeroMoviesList.value;
@@ -206,6 +209,22 @@ const activeCategories = computed(() => {
   if (currentView.value === 'tv') return tvCategoriesList.value;
   return movieCategories.value;
 });
+
+// --- FILTERED RESULTS COMPUTED PROPERTY ---
+const filteredResults = computed(() => {
+  return searchResults.value.filter(item => {
+    const yearMatch = selectedYear.value
+      ? (item.release_date || item.first_air_date)?.startsWith(selectedYear.value.toString())
+      : true;
+
+    const genreMatch = selectedGenre.value
+      ? item.genre_ids?.includes(Number(selectedGenre.value))
+      : true;
+
+    return yearMatch && genreMatch;
+  });
+});
+
 
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const WYZIE_API_KEY = import.meta.env.VITE_WYZIE_API_KEY; 
@@ -259,7 +278,6 @@ const handleRemoveHistory = async (movie) => {
   } catch (err) { console.error("❌ Failed remove history", err); }
 };
 
-// --- FETCH DATA DIPERBARUI DENGAN LAYOUT MIXED & K-DRAMAS DLL ---
 const fetchAllData = async () => {
   try {
     const [trending, topRatedMovies, action, animation, topRatedTv, korean, horror] = await Promise.all([
@@ -267,9 +285,9 @@ const fetchAllData = async () => {
       axios.get(`${BASE_URL}/movie/top_rated?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=28`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=16`),
-      axios.get(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}`), // TV Series Top Rated
-      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_origin_country=KR`), // K-Dramas
-      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`) // Horror
+      axios.get(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_origin_country=KR`),
+      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`)
     ]);
 
     heroMovies.value = await enrichMoviesWithLogos(trending.data.results.slice(0, 8));
@@ -344,6 +362,24 @@ const fetchGenres = async () => {
     const res = await axios.get(`${BASE_URL}/genre/${type}/list?api_key=${API_KEY}`);
     genresList.value = res.data.genres;
   } catch(e) { console.error(e); }
+};
+
+const fetchSearchGenres = async () => {
+  try {
+    // Combine Movie & TV genres for universal search filter
+    const [movieRes, tvRes] = await Promise.all([
+      axios.get(`${BASE_URL}/genre/movie/list?api_key=${API_KEY}`),
+      axios.get(`${BASE_URL}/genre/tv/list?api_key=${API_KEY}`)
+    ]);
+    
+    const combined = [...movieRes.data.genres, ...tvRes.data.genres];
+    const uniqueGenres = Array.from(new Set(combined.map(a => a.id)))
+      .map(id => combined.find(a => a.id === id));
+      
+    searchGenres.value = uniqueGenres;
+  } catch (error) {
+    console.error("Failed to load search genres", error);
+  }
 };
 
 const applyFilters = async () => {
@@ -449,12 +485,17 @@ const closeInfo = () => {
   }, 300); 
 };
 
-const toggleSearch = () => {
+const toggleSearch = async () => {
   if (isLoginOpen.value) isLoginOpen.value = false;
   if (isProfileOpen.value) isProfileOpen.value = false;
   if (isWatchlistOpen.value) isWatchlistOpen.value = false;
+  
   isSearchOpen.value = !isSearchOpen.value;
-  if (isSearchOpen.value) nextTick(() => document.getElementById('viora-search-input')?.focus());
+  
+  if (isSearchOpen.value) {
+    await fetchSearchGenres(); 
+    nextTick(() => document.getElementById('viora-search-input')?.focus());
+  }
 };
 
 const toggleWatchlist = () => {
@@ -464,8 +505,6 @@ const toggleWatchlist = () => {
   if (isProfileOpen.value) isProfileOpen.value = false;
   isWatchlistOpen.value = !isWatchlistOpen.value;
 };
-
-
 
 const handleUserIconClick = () => {
   if (isSearchOpen.value) isSearchOpen.value = false;
@@ -664,12 +703,14 @@ const handleKeydown = (e) => {
 
 const startHeroCarousel = () => {
   if(heroTimer) clearInterval(heroTimer);
+  if(currentView.value !== 'home') return;
   heroTimer = setInterval(() => {
     if(activeHeroMovies.value.length > 0) {
       currentHeroIndex.value = (currentHeroIndex.value + 1) % activeHeroMovies.value.length;
     }
   }, 8000);
 };
+
 const navItems = [
   { key: 'home', action: () => changeView('home') },
   { key: 'search', action: toggleSearch },
@@ -678,35 +719,37 @@ const navItems = [
   { key: 'watchlist', action: toggleWatchlist }
 ]
 
-
 watch(currentView, (val) => {
   if (val === 'home') activeIndex.value = 0
   if (val === 'movie') activeIndex.value = 2
   if (val === 'tv') activeIndex.value = 3
 })
+
 watch(hoverIndex, () => {
   if (hoverIndex.value !== null) {
     isAnimating.value = true
-
     setTimeout(() => {
       isAnimating.value = false
-    }, 180) // durasi squash dulu
+    }, 180) 
   }
 })
 
 onMounted(() => {
- lenis = new Lenis({
-    duration: 1,
-    smoothWheel: true
-  })
+  if (typeof window !== 'undefined') {
+    lenis = new Lenis({
+        duration: 1,
+        smoothWheel: true
+    })
 
-  function raf(time) {
-    lenis.raf(time)
+    function raf(time) {
+        lenis.raf(time)
+        requestAnimationFrame(raf)
+    }
+
     requestAnimationFrame(raf)
+    window.addEventListener('mousemove', handleMouseMove)
   }
-
-  requestAnimationFrame(raf)
-   window.addEventListener('mousemove', handleMouseMove)
+  
   checkLoginStatus();
   fetchAllData();
   window.addEventListener('scroll', handleScroll);
@@ -984,56 +1027,197 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <Transition name="fade">
-      <div v-if="isSearchOpen" class="fixed inset-0 z-[100] bg-black/70 flex justify-center items-start pt-[12vh]" @click.self="toggleSearch">
-        <div class="w-full max-w-2xl bg-[#18181b]/80 border border-white/10 rounded-2xl shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] overflow-hidden flex flex-col mx-4 transform transition-all backdrop-blur-xl">
-          <div class="flex items-center px-5 py-4 border-b border-white/10 bg-black/20">
-            <Search class="w-6 h-6 text-gray-400 mr-4" />
-            <input id="viora-search-input" v-model="searchQuery" @input="onSearchInput" placeholder="Search movies, series, or actors..." class="flex-1 bg-transparent border-none outline-none text-xl text-white placeholder:text-gray-500 font-medium" autocomplete="off" />
-            <button v-if="searchQuery" @click="searchQuery = ''; searchResults = []" class="p-1 mr-2 hover:bg-white/10 rounded-full transition-colors"><X class="w-5 h-5 text-gray-400" /></button>
-            <div class="px-2 py-1 bg-white/10 rounded text-[10px] font-bold text-gray-400 tracking-widest uppercase hidden md:block">ESC</div>
-          </div>
+   <Transition name="fade">
+      <div 
+        data-lenis-prevent
+        v-if="isSearchOpen"
+        class="fixed inset-0 z-[100] bg-black/70 flex justify-center items-start pt-[12vh]"
+        @click.self="toggleSearch"
+      >
 
-          <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2">
-            <div v-if="isSearching" class="p-10 flex flex-col items-center justify-center gap-3">
-              <Loader2 class="w-8 h-8 animate-spin text-blue-500" />
-              <span class="text-sm text-gray-400 font-medium animate-pulse">Searching the universe...</span>
+        <!-- MAIN WRAPPER -->
+        <div class="relative w-full max-w-4xl mx-4 flex gap-4">
+
+          <!-- 🔍 SEARCH BOX -->
+          <div class="flex-1 relative overflow-hidden rounded-3xl border border-white/10 
+          bg-gradient-to-br from-white/10 via-white/5 to-transparent
+          backdrop-blur-2xl shadow-[0_25px_80px_-20px_rgba(0,0,0,1)]">
+
+            <!-- ✨ Liquid highlight -->
+            <div class="pointer-events-none absolute inset-0">
+              <div class="absolute -top-20 -left-20 w-60 h-60 bg-white/10 rounded-full blur-3xl opacity-40"></div>
+              <div class="absolute bottom-0 right-0 w-40 h-40 bg-blue-500/10 rounded-full blur-2xl opacity-30"></div>
             </div>
-            <div v-else-if="searchResults.length === 0" class="p-10 text-center flex flex-col items-center justify-center">
-              <Search class="w-12 h-12 text-gray-600 mb-3" />
-              <p class="text-gray-400 font-medium">No results found for "<span class="text-white">{{ searchQuery }}</span>"</p>
+
+            <!-- HEADER -->
+            <div class="flex items-center px-6 py-5 border-b border-white/10 bg-white/5">
+              <Search class="w-6 h-6 text-gray-400 mr-4" />
+
+              <input
+                id="viora-search-input"
+                v-model="searchQuery"
+                @input="onSearchInput"
+                placeholder="Search movies, series, or actors..."
+                class="flex-1 bg-transparent outline-none text-xl text-white placeholder:text-gray-500 font-medium
+                focus:drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+                autocomplete="off"
+              />
+
+              <button 
+                v-if="searchQuery"
+                @click="searchQuery = ''; searchResults = []"
+                class="p-1 mr-2 hover:bg-white/10 rounded-full transition"
+              >
+                <X class="w-5 h-5 text-gray-400" />
+              </button>
+
+              <div class="px-2 py-1 bg-white/10 rounded text-[10px] font-bold text-gray-400 tracking-widest uppercase hidden md:block">
+                ESC
+              </div>
             </div>
-            <div v-else class="space-y-1 p-1">
-              <div v-for="item in searchResults" :key="item.id" @click="openPlayer(item)" class="flex items-center gap-4 p-3 hover:bg-white/5 rounded-xl cursor-pointer transition-colors group">
-                <div class="w-14 h-20 bg-white/5 rounded-md overflow-hidden flex-shrink-0 shadow-md">
-                  <img :src="getImageUrl(item.poster_path || item.backdrop_path, 'w185')" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <img v-if="item.logo_path" :src="getImageUrl(item.logo_path, 'w300')" class="max-h-[30px] max-w-[150px] object-contain drop-shadow-md mb-1 origin-left" />
-                  <h4 v-else class="text-white font-bold text-lg leading-tight group-hover:text-blue-500 transition-colors truncate">{{ item.title || item.name }}</h4>
-                  
-                  <div class="flex items-center gap-3 text-xs text-gray-400 mt-2 font-medium">
-                    <span class="bg-white/10 px-2 py-0.5 rounded text-white tracking-wide">{{ item.media_type === 'tv' ? 'Series' : 'Movie' }}</span>
-                    <span>{{ (item.release_date || item.first_air_date)?.substring(0,4) }}</span>
-                    <span class="flex items-center gap-1 text-yellow-500 bg-yellow-500/10 px-1.5 py-0.5 rounded"><Star class="w-3 h-3 fill-current"/> {{ item.vote_average?.toFixed(1) }}</span>
+
+            <!-- RESULTS -->
+            <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2">
+
+              <!-- LOADING -->
+              <div v-if="isSearching" class="p-10 flex flex-col items-center gap-3">
+                <Loader2 class="w-8 h-8 animate-spin text-blue-500" />
+                <span class="text-sm text-gray-400 animate-pulse">Searching...</span>
+              </div>
+
+              <!-- EMPTY -->
+              <div v-else-if="filteredResults.length === 0" class="p-10 text-center">
+                <Search class="w-12 h-12 text-gray-600 mb-3 mx-auto" />
+                <p class="text-gray-400">
+                  No results for "<span class="text-white">{{ searchQuery }}</span>"
+                </p>
+              </div>
+
+              <!-- LIST -->
+              <div v-else class="space-y-2 p-1">
+                <div 
+                  v-for="item in filteredResults"
+                  :key="item.id"
+                  @click="openPlayer(item)"
+                  class="flex items-center gap-4 p-3 rounded-xl cursor-pointer 
+                  bg-white/[0.02] hover:bg-white/[0.06] 
+                  backdrop-blur-md border border-transparent hover:border-white/10
+                  transition-all duration-300 group"
+                >
+
+                  <!-- POSTER -->
+                  <div class="w-14 h-20 bg-white/5 rounded-md overflow-hidden flex-shrink-0">
+                    <img 
+                      :src="getImageUrl(item.poster_path || item.backdrop_path, 'w185')" 
+                      class="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+                    />
                   </div>
-                </div>
-                <div class="w-10 h-10 rounded-full flex items-center justify-center group-hover:bg-white/10 transition-colors">
-                  <Play class="w-5 h-5 text-gray-400 group-hover:text-white" />
-                </div>
-                
-                <div class="flex gap-2">
-                  <button @click.stop="openInfo(item)" class="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-gray-500/30 transition">
-                    <Info class="w-4 h-4 text-white" />
-                  </button>
-                  <button @click.stop="handleWatchlistToggle(item, item.media_type)" class="w-10 h-10 rounded-full flex items-center justify-center bg-white/5 hover:bg-blue-500/20 transition">
-                    <Check v-if="watchlist.has(item.id)" class="w-4 h-4 text-green-400" />
-                    <Bookmark v-else class="w-4 h-4 text-white" />
-                  </button>
+
+                  <!-- INFO -->
+                  <div class="flex-1 min-w-0">
+
+                    <!-- 🔥 PRIORITAS LOGO -->
+                    <img 
+                      v-if="item.logo_path"
+                      :src="getImageUrl(item.logo_path, 'w300')"
+                      class="max-h-[28px] max-w-[140px] object-contain mb-1 drop-shadow-md"
+                    />
+
+                    <h4 v-else class="text-white font-bold text-lg truncate">
+                      {{ item.title || item.name }}
+                    </h4>
+
+                    <!-- META -->
+                    <div class="flex items-center gap-3 text-xs text-gray-400 mt-2">
+
+                      <span class="bg-white/10 px-2 py-0.5 rounded text-white">
+                        {{ item.media_type === 'tv' ? 'Series' : 'Movie' }}
+                      </span>
+
+                      <span>
+                        {{ (item.release_date || item.first_air_date)?.substring(0,4) }}
+                      </span>
+
+                      <span class="flex items-center gap-1 text-yellow-500">
+                        ⭐ {{ item.vote_average?.toFixed(1) }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- ACTIONS (KANAN) -->
+                  <div class="flex items-center gap-2">
+
+                    <!-- INFO -->
+                    <button 
+                      @click.stop="openInfo(item)"
+                      class="w-10 h-10 rounded-full flex items-center justify-center 
+                      bg-white/5 hover:bg-white/15 transition"
+                    >
+                      <Info class="w-4 h-4 text-white" />
+                    </button>
+
+                    <!-- BOOKMARK -->
+                    <button 
+                      @click.stop="handleWatchlistToggle(item, item.media_type)"
+                      class="w-10 h-10 rounded-full flex items-center justify-center 
+                      bg-white/5 hover:bg-blue-500/20 transition"
+                    >
+                      <Check 
+                        v-if="watchlist.has(item.id)" 
+                        class="w-4 h-4 text-green-400" 
+                      />
+                      <Bookmark 
+                        v-else 
+                        class="w-4 h-4 text-white" 
+                      />
+                    </button>
+
+                    <!-- PLAY -->
+                    <div class="w-10 h-10 rounded-full flex items-center justify-center 
+                    group-hover:bg-white/10 transition">
+                      <Play class="w-5 h-5 text-gray-400 group-hover:text-white" />
+                    </div>
+
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          <!-- 🎛 FILTER SIDEBAR -->
+          <div class="w-[220px] hidden md:flex flex-col gap-4 
+          rounded-3xl border border-white/10 
+          bg-gradient-to-br from-white/10 via-white/5 to-transparent
+          backdrop-blur-2xl p-4">
+
+            <h3 class="text-white text-sm font-semibold opacity-80">Filter</h3>
+
+            <!-- YEAR -->
+            <div>
+              <p class="text-xs text-gray-400 mb-2">Year</p>
+              <select v-model="selectedYear"
+                class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                <option value="">All</option>
+                <option v-for="year in availableYears" :key="year" :value="year">
+                  {{ year }}
+                </option>
+              </select>
+            </div>
+
+            <!-- GENRE -->
+            <div>
+              <p class="text-xs text-gray-400 mb-2">Genre</p>
+              <select v-model="selectedGenre"
+                class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                <option value="">All</option>
+                <option v-for="g in searchGenres" :key="g.id" :value="g.id">
+                  {{ g.name }}
+                </option>
+              </select>
+            </div>
+
+          </div>
+
         </div>
       </div>
     </Transition>
