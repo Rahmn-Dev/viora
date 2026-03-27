@@ -1682,7 +1682,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                   <div class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
+                   <div class="backdrop-blur-sm w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
                       <Play class="w-5 h-5 text-white fill-current" />
                    </div>
                 </div>
