@@ -1,5 +1,5 @@
 <script setup>
-axios.defaults.baseURL = 'http://192.168.101.41:8000';
+axios.defaults.baseURL = import.meta.env.VITE_API_URL;
 
 axios.interceptors.response.use(
   res => res,
@@ -38,6 +38,8 @@ let lenis;
 
 const mouseX = ref(0)
 const mouseY = ref(0)
+const isHoveringHeroCard = ref(false);
+let heroCardAutoScrollTimer = null;
 
 
 const activeIndex = ref(0)
@@ -54,6 +56,30 @@ const resetMagnet = () => {
   magneticOffset.value = { x: 0, y: 0 }
   activeMagnet.value = null
 }
+const startHeroCardAutoScroll = () => {
+  if (heroCardAutoScrollTimer) clearInterval(heroCardAutoScrollTimer);
+  
+  heroCardAutoScrollTimer = setInterval(() => {
+    // Kalau user lagi hover/sentuh card, carousel pause sebentar
+    if (isHoveringHeroCard.value) return; 
+
+    const containers = document.querySelectorAll('.hero-card-carousel');
+    containers.forEach(container => {
+      const firstChild = container.children[0];
+      if (!firstChild) return;
+
+      const scrollAmount = firstChild.offsetWidth + 24; // Lebar card + gap-6 (24px)
+      const isAtEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 10;
+
+      // Kalau sudah di ujung kanan, balik ke kiri. Kalau belum, geser ke kanan.
+      if (isAtEnd) {
+        container.scrollTo({ left: 0, behavior: 'smooth' });
+      } else {
+        container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+      }
+    });
+  }, 4000); // Carousel geser tiap 4 detik
+};
 
 const sliderStyle = computed(() => {
   const index = hoverIndex.value ?? activeIndex.value
@@ -393,7 +419,13 @@ const applyFilters = async () => {
 const changeView = async (viewType) => {
   if (currentView.value === viewType) return; 
   
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Gunakan lenis.scrollTo jika lenis sudah aktif, fallback ke native window.scrollTo
+  if (lenis) {
+    lenis.scrollTo(0, { immediate: false }); // Ubah jadi immediate: true kalau mau instan tanpa animasi smooth
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   currentView.value = viewType;
   
   if(heroTimer) clearInterval(heroTimer);
@@ -752,6 +784,7 @@ onMounted(() => {
   
   checkLoginStatus();
   fetchAllData();
+  startHeroCardAutoScroll();
   window.addEventListener('scroll', handleScroll);
   window.addEventListener('keydown', handleKeydown);
   window.addEventListener('message', handlePlayerMessage); 
@@ -763,6 +796,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('message', handlePlayerMessage);
   if (heroTimer) clearInterval(heroTimer);
+  if (heroCardAutoScrollTimer) clearInterval(heroCardAutoScrollTimer);
 });
 </script>
 
@@ -1474,8 +1508,15 @@ onUnmounted(() => {
         <section v-for="category in activeCategories" :key="category.id" class="pl-6 lg:pl-12">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 "><span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> {{ category.title }}</h3>
           
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200 snap-x" style="padding-bottom: 20px; padding-top: 40px;">
-            <div v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)" 
+          <div 
+            :class="['flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200 snap-x', category.layout === 'hero-card' ? 'hero-card-carousel' : '']" 
+            style="padding-bottom: 20px; padding-top: 40px;"
+            @mouseenter="category.layout === 'hero-card' ? (isHoveringHeroCard = true) : null"
+            @mouseleave="category.layout === 'hero-card' ? (isHoveringHeroCard = false) : null"
+            @touchstart="category.layout === 'hero-card' ? (isHoveringHeroCard = true) : null"
+            @touchend="category.layout === 'hero-card' ? (isHoveringHeroCard = false) : null"
+          >
+          <div v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)" 
               :class="[
                 'relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer snap-center',
                 category.layout === 'hero-card' ? 'w-[85vw] md:w-[700px] aspect-video md:aspect-[21/9]' :
