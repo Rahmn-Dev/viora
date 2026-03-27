@@ -738,6 +738,7 @@ const handlePlayerMessage = async (event) => {
 let ticking = false;
 const handleScroll = () => {
   if (!ticking) {
+    
     window.requestAnimationFrame(() => {
       isScrolled.value = window.scrollY > 50;
       ticking = false;
@@ -756,6 +757,7 @@ const handleScroll = () => {
         }
       }
     });
+    
     ticking = true;
   }
 };
@@ -839,6 +841,7 @@ onUnmounted(() => {
 </script>
 
 <template>
+  
   <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
     
     <Transition
@@ -870,7 +873,7 @@ onUnmounted(() => {
                 <Button @click="openPlayer(selectedMovieInfo)" class="bg-white text-black hover:bg-blue-500 hover:text-white font-bold px-8 h-12 rounded-xl transition-colors">
                   <Play class="w-5 h-5 mr-2 fill-current" /> Play
                 </Button>
-                <Button @click="handleWatchlistToggle(selectedMovieInfo)" variant="outline" class="bg-black/40 backdrop-blur-md border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors">
+                <Button @click="handleWatchlistToggle(selectedMovieInfo)" variant="outline" class="bg-black/40  border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors">
                   <Check v-if="watchlist.has(selectedMovieInfo?.id)" class="w-5 h-5 mr-2 text-green-400" />
                   <Bookmark v-else class="w-5 h-5 mr-2" />
                   My List
@@ -909,11 +912,11 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex gap-3 mt-2">
-                  <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
+                  <div class="flex items-center gap-1 bg-white/10  border border-white/20 rounded-xl px-3 py-1">
                     <Star class="w-4 h-4 text-yellow-400" />
                     <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.vote_average }}/10</span>
                   </div>
-                  <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
+                  <div class="flex items-center gap-1 bg-white/10 border border-white/20 rounded-xl px-3 py-1">
                     <Flame class="w-4 h-4 text-red-400" />
                     <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.popularity?.toFixed(1) }}</span>
                   </div>
@@ -981,7 +984,7 @@ onUnmounted(() => {
                 </template>
               </div>
             </div>
-            <div v-else class="bg-white/20 backdrop-blur-md border border-white/30 rounded-xl p-4 flex justify-center items-center" style="box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);">
+            <div v-else class="bg-white/20  border border-white/30 rounded-xl p-4 flex justify-center items-center" style="box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);">
               <p>No company logo available</p>
             </div>
           </div>
@@ -1032,7 +1035,7 @@ onUnmounted(() => {
           <div class="pointer-events-auto group flex justify-start items-start">
             <button 
               @click="closePlayer" 
-              class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full backdrop-blur-md transition-all duration-300 text-white shadow-xl cursor-pointer"
+              class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full transition-all duration-300 text-white shadow-xl cursor-pointer"
             >
               <X class="w-10 h-10" />
             </button>
@@ -1062,7 +1065,7 @@ onUnmounted(() => {
     </Transition>
 
     <Transition name="fade">
-      <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[100] bg-black/90 overflow-y-auto backdrop-blur-xl" @click.self="toggleWatchlist">
+      <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[100] bg-black/90 overflow-y-auto " @click.self="toggleWatchlist">
         <div class="min-h-screen p-6 lg:p-12 pt-24 relative max-w-7xl mx-auto">
           <button @click="toggleWatchlist" class="fixed top-8 right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-50 shadow-xl"><X class="w-6 h-6 text-white" /></button>
           
@@ -1088,10 +1091,10 @@ onUnmounted(() => {
               </div>
 
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 backdrop-blur-md rounded-full transition-colors border border-white/20">
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60  rounded-full transition-colors border border-white/20">
                   <Info class="w-4 h-4 text-white" />
                 </button>
-                <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80 backdrop-blur-md rounded-full transition-colors border border-white/20">
+                <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80  rounded-full transition-colors border border-white/20">
                   <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
                   <Bookmark v-else class="w-4 h-4 text-white" />
                 </button>
@@ -1435,10 +1438,7 @@ onUnmounted(() => {
         :class="isScrolled ? 'text-2xl' : 'text-4xl'"
       >
         <span class="text-white">V</span>
-        <span 
-          class="overflow-hidden transition-all duration-500" 
-          :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'"
-        >
+       <span class="overflow-hidden transition-all duration-500 bg-clip-text text-transparent bg-[linear-gradient(110deg,#ffffff,45%,#60a5fa,55%,#ffffff)] bg-[length:250%_auto] animate-[shimmer_3s_infinite_linear]" :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">
           IORA
         </span>
         <span class="text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]">.</span>
