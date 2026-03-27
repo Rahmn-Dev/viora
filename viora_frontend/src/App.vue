@@ -88,13 +88,15 @@ const sliderStyle = computed(() => {
   if (isAnimating.value) {
     return {
       transform: `translateX(${index * 56}px) scaleX(2) scaleY(0.2)`,
-      borderRadius: '15px'
+      borderRadius: '15px',
+      boxShadow: '0 0 20px rgba(255, 255, 255, 0.4)' // 👈 Glow saat gerak
     }
   }
 
   return {
     transform: `translateX(${index * 56}px) scaleX(${isHovering ? 1 : 0.9}) scaleY(0.8)`,
-    borderRadius: '20px'
+    borderRadius: '20px',
+    boxShadow: '0 0 15px rgba(255, 255, 255, 0.15)' // 👈 Glow diam
   }
 })
 
@@ -256,10 +258,17 @@ const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const WYZIE_API_KEY = import.meta.env.VITE_WYZIE_API_KEY; 
 const BASE_URL = 'https://api.themoviedb.org/3';
 
-const getImageUrl = (path, width = 'w780') => {
+const getImageUrl = (path, width = 'w500') => {
   if (!path) return 'https://via.placeholder.com/300x450?text=No+Image';
   const tmdbUrl = `https://image.tmdb.org/t/p/${width}${path}`;
-  return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=80&n=-1`;
+  
+  // Kalau kualitas aslinya 'original' atau 'w780', wajar kualitas tinggi (q=80)
+  if (width === 'original' || width === 'w780') {
+    return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=80&n=-1`;
+  }
+  
+  // Tapi untuk thumbnail kecil (w300 atau w500), turunin kualitas jadi 60% dan pastikan resolusinya gak kebesaran
+  return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=60&w=300&n=-1`;
 };
 
 const fetchLogo = async (id, type = 'movie') => {
@@ -316,10 +325,13 @@ const fetchAllData = async () => {
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`)
     ]);
 
-    heroMovies.value = await enrichMoviesWithLogos(trending.data.results.slice(0, 8));
+    const validTrending = trending.data.results.filter(m => m.vote_average > 0);
+    
+    // Baru potong 8 teratas
+    heroMovies.value = await enrichMoviesWithLogos(validTrending.slice(0, 8));
     
     const categoriesData = [
-      { id: 1, title: 'Trending Now', layout: 'landscape', raw: trending.data.results.slice(5, 15) },
+      { id: 1, title: 'Trending Now', layout: 'landscape', raw: validTrending.slice(5, 15) },
       { id: 2, title: 'Top Rated TV Series', layout: 'hero-card', raw: topRatedTv.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
       { id: 3, title: 'K-Dramas', layout: 'portrait', raw: korean.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
       { id: 4, title: 'Horror Fests', layout: 'portrait', raw: horror.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
@@ -346,7 +358,9 @@ const fetchMoviePageData = async () => {
       axios.get(`${BASE_URL}/movie/upcoming?api_key=${API_KEY}`)
     ]);
 
-    const popData = popular.data.results.map(m => ({...m, media_type: 'movie'}));
+    const popData = popular.data.results
+      .filter(m => m.vote_average > 0)
+      .map(m => ({...m, media_type: 'movie'}));
     movieHeroMoviesList.value = await enrichMoviesWithLogos(popData.slice(0, 8));
 
     const cats = [
@@ -369,7 +383,9 @@ const fetchTvPageData = async () => {
       axios.get(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}`)
     ]);
 
-    const popData = popular.data.results.map(m => ({...m, media_type: 'tv'}));
+    const popData = popular.data.results
+      .filter(m => m.vote_average > 0)
+      .map(m => ({...m, media_type: 'tv'}));
     tvHeroMoviesList.value = await enrichMoviesWithLogos(popData.slice(0, 8));
 
     const cats = [
@@ -708,7 +724,7 @@ const closePlayer = () => {
   setTimeout(() => {
     isPlayerOpen.value = false;
     currentMedia.value = null;
-    if(currentView.value === 'home') startHeroCarousel(); 
+    startHeroCarousel(); 
     fetchUserData();
   }, 100); 
 };
@@ -775,7 +791,7 @@ const handleKeydown = (e) => {
 
 const startHeroCarousel = () => {
   if(heroTimer) clearInterval(heroTimer);
-  if(currentView.value !== 'home') return;
+  // if(currentView.value !== 'home') return;
   heroTimer = setInterval(() => {
     if(activeHeroMovies.value.length > 0) {
       currentHeroIndex.value = (currentHeroIndex.value + 1) % activeHeroMovies.value.length;
@@ -805,7 +821,7 @@ watch(hoverIndex, () => {
     }, 180) 
   }
 })
-
+let lenisRafId;
 onMounted(() => {
   if (typeof window !== 'undefined') {
     lenis = new Lenis({
@@ -813,12 +829,21 @@ onMounted(() => {
         smoothWheel: true
     })
 
+    // Event listener bawaan Lenis
+    lenis.on('scroll', (e) => {
+       // Kalau lagi nge-scroll ngebut, matiin efek hover sementara
+       if (Math.abs(e.velocity) > 5) {
+         document.body.style.pointerEvents = 'none';
+       } else {
+         document.body.style.pointerEvents = 'auto';
+       }
+    });
+
     function raf(time) {
         lenis.raf(time)
-        requestAnimationFrame(raf)
+        lenisRafId = requestAnimationFrame(raf) 
     }
-
-    requestAnimationFrame(raf)
+    lenisRafId = requestAnimationFrame(raf)
     window.addEventListener('mousemove', handleMouseMove)
   }
   
@@ -831,6 +856,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  if (lenisRafId) cancelAnimationFrame(lenisRafId); // Batalin raf-nya!
+  if (lenis) lenis.destroy();
   window.removeEventListener('mousemove', handleMouseMove)
   window.removeEventListener('scroll', handleScroll);
   window.removeEventListener('keydown', handleKeydown);
@@ -1080,7 +1107,9 @@ onUnmounted(() => {
           </div>
 
           <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-            <div v-for="movie in watchlistMovies" :key="movie.id" class="relative aspect-video md:aspect-[2/3] rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
+          <div class="relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer will-change-transform aspect-[2/3] col-span-1">
+  
+            <div class="absolute inset-0 rounded-2xl shadow-[0_0_40px_rgba(59,130,246,0.3)] opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none"></div>
               <img :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-110" />
 
               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end" style="     align-items: center; ">
@@ -1426,7 +1455,7 @@ onUnmounted(() => {
       :class="[
         'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12',
         isScrolled 
-          ? 'py-3 border-b border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)]' 
+          ? 'py-3 border-b border-white/10 bg-white/5 backdrop-blur-sm shadow-[0_8px_32px_rgba(0,0,0,0.3)]' 
           : 'bg-transparent py-8'
       ]"
     >
@@ -1438,7 +1467,7 @@ onUnmounted(() => {
         :class="isScrolled ? 'text-2xl' : 'text-4xl'"
       >
         <span class="text-white">V</span>
-       <span class="overflow-hidden transition-all duration-500 bg-clip-text text-transparent bg-[linear-gradient(110deg,#ffffff,45%,#60a5fa,55%,#ffffff)] bg-[length:250%_auto] animate-[shimmer_3s_infinite_linear]" :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">
+       <span class="overflow-hidden transition-all duration-500 bg-clip-text text-transparent bg-[linear-gradient(110deg,#ffffff,45%,#60a5fa,55%,#ffffff)] bg-[length:250%_auto] " :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">
           IORA
         </span>
         <span class="text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]">.</span>
@@ -1482,7 +1511,7 @@ onUnmounted(() => {
             <div class="absolute bottom-[15%] left-6 lg:left-12 max-w-2xl space-y-8 z-10">
               <div class="space-y-6">
                 <div class="flex items-center gap-3">
-                   <div class="flex items-center bg-[#f5c518] text-black px-2 py-0.5 rounded font-black text-[10px]">IMDb {{ movie.vote_average.toFixed(1) }}</div>
+                   <div v-if="movie.vote_average" class="flex items-center bg-[#f5c518] text-black px-2 py-0.5 rounded font-black text-[10px]">IMDb {{ movie.vote_average.toFixed(1) }}</div>
                    <span class="text-blue-500 font-bold text-[12px] uppercase tracking-[0.3em]">Viora Originals</span>
                 </div>
 
@@ -1521,7 +1550,7 @@ onUnmounted(() => {
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth  hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4   hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
             <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
               <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
               <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
@@ -1530,7 +1559,7 @@ onUnmounted(() => {
                   <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
                 <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-white/20  border border-white/20 shadow-md">
+                  <div class=" px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-white/20  border border-white/20 shadow-md">
                   <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
                  </div> 
                 </div>
@@ -1539,7 +1568,7 @@ onUnmounted(() => {
                 <div class="h-full bg-blue-500" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
               </div>
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <div class="w-14 h-14 bg-white/10 rounded-full backdrop-blur-sm flex items-center justify-center border border-white/30">
+                <div class="w-14 h-14 bg-white/10 rounded-full  flex items-center justify-center border border-white/30">
                   <Play class="w-6 h-6 text-white fill-current" />
                 </div>
               </div>
@@ -1556,7 +1585,7 @@ onUnmounted(() => {
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 "><span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> {{ category.title }}</h3>
           
           <div 
-            :class="['flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200 snap-x', category.layout === 'hero-card' ? 'hero-card-carousel' : '']" 
+            :class="['flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4  hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200 snap-x', category.layout === 'hero-card' ? 'hero-card-carousel' : '']" 
             style="padding-bottom: 20px; padding-top: 40px;"
             @mouseenter="category.layout === 'hero-card' ? (isHoveringHeroCard = true) : null"
             @mouseleave="category.layout === 'hero-card' ? (isHoveringHeroCard = false) : null"
@@ -1583,7 +1612,7 @@ onUnmounted(() => {
                   <h4 v-else :class="category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1'" class="font-black uppercase tracking-tighter drop-shadow-md">{{ movie.title || movie.name }}</h4>
                 </div>
                <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-white/20 border border-white/20 shadow-md">
+                  <div class=" px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-white/20 border border-white/20 shadow-md">
                     <span class="text-[11px] md:text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
                   </div> 
                 </div>
@@ -1592,7 +1621,7 @@ onUnmounted(() => {
               <div class="absolute inset-0 rounded-2xl pointer-events-none bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
               
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                 <div class="w-12 h-12 md:w-14 md:h-14 bg-white/10 rounded-full flex backdrop-blur-sm items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" /></div>
+                 <div class="w-12 h-12 md:w-14 md:h-14 bg-white/10 rounded-full flex  items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" /></div>
               </div>
               
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
@@ -1640,7 +1669,7 @@ onUnmounted(() => {
               <div 
                 v-for="(movie, index) in browseItems" :key="movie.id"
                 :class="[
-                   'relative rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer',
+                   'relative rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer will-change-transform',
                    index % 9 === 0 ? 'col-span-2 md:col-span-4 lg:col-span-2 aspect-video' : 'col-span-1 aspect-[2/3]'
                 ]"
                 @click="openInfo(movie)"
@@ -1682,7 +1711,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                   <div class="backdrop-blur-sm w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
+                   <div class=" w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
                       <Play class="w-5 h-5 text-white fill-current" />
                    </div>
                 </div>
