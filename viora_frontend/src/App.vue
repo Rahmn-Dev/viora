@@ -41,7 +41,7 @@ const mouseY = ref(0)
 const isHoveringHeroCard = ref(false);
 let heroCardAutoScrollTimer = null;
 
-
+const hasShownAutoLogin = ref(false);
 const activeIndex = ref(0)
 const hoverIndex = ref(null)
 const isAnimating = ref(false)
@@ -464,6 +464,24 @@ const handleImageLoad = (e) => {
     setTimeout(() => skeleton.remove(), 500); 
   }
 };
+// --- SMOOTH HORIZONTAL SCROLL ALA LENIS ---
+const smoothHorizontalScroll = (e) => {
+  // Pastikan fungsi ini cuma jalan kalau user BENERAN scroll ke samping (deltaX)
+  // atau pakai Shift + Scroll atas-bawah (deltaY)
+  const isHorizontalScroll = Math.abs(e.deltaX) > 0 || (e.shiftKey && Math.abs(e.deltaY) > 0);
+
+  if (isHorizontalScroll) {
+    e.preventDefault(); // Matikan scroll bawaan browser yang patah-patah
+    
+    // Ambil nilai arah scroll-nya
+    const scrollAmount = e.deltaX !== 0 ? e.deltaX : e.deltaY;
+    
+    e.currentTarget.scrollBy({
+      left: scrollAmount * 4, // Kalikan 4 biar dapat momentum luncuran yang jauh & smooth
+      behavior: 'smooth'
+    });
+  }
+};
 
 const loadMoreBrowseItems = async () => {
   if (isFetchingMore.value) return;
@@ -723,6 +741,13 @@ const handleScroll = () => {
     window.requestAnimationFrame(() => {
       isScrolled.value = window.scrollY > 50;
       ticking = false;
+      if (!isLoggedIn.value && (currentView.value === 'movie' || currentView.value === 'tv')) {
+        // Kalau scroll udah lewat 1200px dan belum pernah dimunculin otomatis
+        if (window.scrollY > 1200 && !hasShownAutoLogin.value && !isLoginOpen.value) {
+          isLoginOpen.value = true;
+          hasShownAutoLogin.value = false; // Set true biar gak spam muncul terus
+        }
+      }
       
       if (currentView.value !== 'home' && !isBrowseLoading.value && !isFetchingMore.value) {
         const bottomOfWindow = document.documentElement.scrollTop + window.innerHeight >= document.documentElement.offsetHeight - 500;
@@ -1297,7 +1322,7 @@ onUnmounted(() => {
             <div>
               <div class="flex items-center justify-between mb-2">
                 <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">Password</label>
-                <a href="#" class="text-xs text-blue-500 hover:text-blue-400 font-medium">Forgot?</a>
+                
               </div>
               <input v-model="loginData.password" type="password" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" placeholder="••••••••" required />
             </div>
