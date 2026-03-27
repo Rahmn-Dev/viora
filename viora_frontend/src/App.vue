@@ -451,6 +451,19 @@ const changeView = async (viewType) => {
   await applyFilters();
   isBrowseLoading.value = false;
 };
+const handleImageLoad = (e) => {
+  // 1. Munculkan gambar aslinya (fade in)
+  e.target.style.opacity = '1';
+  e.target.style.transform = 'scale(1)'; // reset scale biar rapi
+
+  // 2. Sembunyikan elemen skeleton pelan-pelan
+  const skeleton = e.target.previousElementSibling;
+  if (skeleton && skeleton.classList.contains('skeleton-overlay')) {
+    skeleton.style.opacity = '0';
+    // Hapus dari DOM setelah animasi selesai (biar enteng)
+    setTimeout(() => skeleton.remove(), 500); 
+  }
+};
 
 const loadMoreBrowseItems = async () => {
   if (isFetchingMore.value) return;
@@ -908,8 +921,17 @@ onUnmounted(() => {
               <h4 class="text-white font-bold mb-2">Cast</h4>
               <div class="flex gap-4 overflow-x-auto py-2">
                 <div v-for="actor in selectedMovieInfo.cast" :key="actor.id" class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-1">
-                  <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
-                    <img :src="getImageUrl(actor.profile_path, 'w185')" :alt="actor.name" class="w-full h-full object-cover" />
+                 <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0 flex items-center justify-center border border-white/10">
+                    <img 
+                      v-if="actor.profile_path" 
+                      :src="getImageUrl(actor.profile_path, 'w185')" 
+                      :alt="actor.name" 
+                      class="w-full h-full object-cover" 
+                    />
+                    <UserIcon 
+                      v-else 
+                      class="w-7 h-7 text-gray-500" 
+                    />
                   </div>
                   <div class="flex-1">
                     <span class="text-gray-300 text-sm font-medium leading-snug break-words">{{ actor.name }}</span>
@@ -1598,10 +1620,14 @@ onUnmounted(() => {
                 ]"
                 @click="openInfo(movie)"
               >
-                <img 
-                  :src="getImageUrl(index % 9 === 0 ? (movie.backdrop_path || movie.poster_path) : (movie.poster_path || movie.backdrop_path), index % 9 === 0 ? 'w780' : 'w500')" 
-                  class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-110" 
-                />
+              <div class="skeleton-overlay absolute inset-0 bg-[#27272a] animate-pulse transition-opacity duration-500 z-0"></div>
+
+              <img 
+                :src="getImageUrl(index % 9 === 0 ? (movie.backdrop_path || movie.poster_path) : (movie.poster_path || movie.backdrop_path), index % 9 === 0 ? 'w780' : 'w500')" 
+                class="relative z-10 w-full h-full object-cover transition-all duration-1000 group-hover:scale-110" 
+                style="opacity: 0; transform: scale(1.05);"  
+                @load="handleImageLoad"
+              />
 
                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end items-center">
                   <div class="mb-2">
