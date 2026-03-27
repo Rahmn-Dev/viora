@@ -1620,14 +1620,12 @@ onUnmounted(() => {
                 ]"
                 @click="openInfo(movie)"
               >
-              <div class="skeleton-overlay absolute inset-0 bg-[#27272a] animate-pulse transition-opacity duration-500 z-0"></div>
-
               <img 
-                :src="getImageUrl(index % 9 === 0 ? (movie.backdrop_path || movie.poster_path) : (movie.poster_path || movie.backdrop_path), index % 9 === 0 ? 'w780' : 'w500')" 
-                class="relative z-10 w-full h-full object-cover transition-all duration-1000 group-hover:scale-110" 
-                style="opacity: 0; transform: scale(1.05);"  
-                @load="handleImageLoad"
-              />
+                  :src="getImageUrl(index % 9 === 0 ? (movie.backdrop_path || movie.poster_path) : (movie.poster_path || movie.backdrop_path), index % 9 === 0 ? 'w780' : 'w500')" 
+                  class="w-full h-full object-cover group-hover:opacity-100 transition-all duration-1000 group-hover:scale-110" 
+                  style="opacity: 0; transform: scale(1.05);"  
+                   @load="handleImageLoad"
+                />
 
                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end items-center">
                   <div class="mb-2">
