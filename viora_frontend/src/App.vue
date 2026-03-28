@@ -50,6 +50,7 @@ const magneticOffset = ref({ x: 0, y: 0 })
 const magneticOffsets = ref({})
 const activeMagnetIndex = ref(null)
 const activeMagnet = ref(null)
+const kidsZoneMovie = ref(null);
 
 
 const resetMagnet = () => {
@@ -165,6 +166,8 @@ const handleMouseMove = (e) => {
 const heroMovies = ref([]);
 const currentHeroIndex = ref(0);
 const movieCategories = ref([]);
+const kidsZoneMovies = ref([]); // 👈 State untuk carousel Kidz Zone
+const kidsCategories = ref([]); // 👈 Ubah namanya biar bisa nampung banyak baris
 const isLoading = ref(true);
 const isScrolled = ref(false);
 let heroTimer = null;
@@ -315,14 +318,18 @@ const handleRemoveHistory = async (movie) => {
 
 const fetchAllData = async () => {
   try {
-    const [trending, topRatedMovies, action, animation, topRatedTv, korean, horror] = await Promise.all([
+    const [trending, topRatedMovies, action, animation, topRatedTv, korean, horror, family, kidsTv, animeTv] = await Promise.all([
       axios.get(`${BASE_URL}/trending/all/day?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/movie/top_rated?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=28`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=16`),
       axios.get(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_origin_country=KR`),
-      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`)
+      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`),
+      // --- TAMBAHAN KHUSUS KIDZ ZONE ---
+      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=10751`), // Family
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=10762`), // Kids TV
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_original_language=ja`) // Anime TV
     ]);
 
     const validTrending = trending.data.results.filter(m => m.vote_average > 0);
@@ -342,6 +349,16 @@ const fetchAllData = async () => {
     
     movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({ 
       id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw) 
+    })));
+    const kidsCatsData = [
+      { id: 'k1', title: 'Top Animation', layout: 'portrait', raw: animation.data.results.slice(10, 20).map(m=>({...m, media_type: 'movie'})) },
+      { id: 'k2', title: 'Family Movies', layout: 'landscape', raw: family.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
+      { id: 'k3', title: 'Kids TV Shows', layout: 'portrait', raw: kidsTv.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
+      { id: 'k4', title: 'Anime Universe', layout: 'landscape', raw: animeTv.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
+    ];
+    
+    kidsCategories.value = await Promise.all(kidsCatsData.map(async (cat) => ({
+      id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw)
     })));
     
     startHeroCarousel();
@@ -616,7 +633,7 @@ const performSearch = async () => {
   isSearching.value = true;
   try {
     const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false`);
-    const rawResults = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv').slice(0, 15);
+    const rawResults = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv');
     searchResults.value = await enrichMoviesWithLogos(rawResults);
   } catch (error) { console.error(error); } finally { isSearching.value = false; }
 };
@@ -1056,7 +1073,7 @@ onUnmounted(() => {
 
     <Transition name="fade">
       <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-       <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start bg-gradient-to-b from-black/80 to-transparent z-10 pointer-events-none">
+       <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-10 pointer-events-none">
 
           <!-- 🔴 CLOSE BUTTON (kiri) -->
           <div class="pointer-events-auto group flex justify-start items-start">
@@ -1629,6 +1646,73 @@ onUnmounted(() => {
                 <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-3 h-3 md:w-4 md:h-4 text-green-400" /><Bookmark v-else class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
               </div>
             </div>
+          </div>
+        </section>
+        
+        <section v-if="currentView === 'home' && kidsCategories.length > 0" class="px-4 lg:px-10 pt-10 pb-16">
+          <div class="relative w-full rounded-[3rem] md:rounded-[4rem] overflow-hidden bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 shadow-[0_20px_50px_-10px_rgba(59,130,246,0.3)] pt-12 pb-4">
+            
+            <div class="absolute top-0 left-0 w-96 h-96 bg-yellow-400 rounded-full mix-blend-screen filter blur-[70px] opacity-60 pointer-events-none"></div>
+            <div class="absolute bottom-0 right-0 w-[40rem] h-[40rem] bg-pink-500 rounded-full mix-blend-screen filter blur-[90px] opacity-40 pointer-events-none"></div>
+            
+            <div class="relative z-10 px-8 md:px-12 mb-10 flex flex-col md:flex-row md:items-center gap-4">
+              <div class="relative inline-block">
+                <svg class="absolute -inset-6 w-[130%] h-[150%] -z-10 text-yellow-400 drop-shadow-lg transform -rotate-3" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+                  <path fill="currentColor" d="M44.7,-76.4C58.8,-69.2,71.8,-59.1,81.3,-46C90.8,-32.9,96.8,-16.4,96.5,-0.2C96.2,16.1,89.5,32.1,80.1,45.3C70.6,58.4,58.3,68.5,44.5,76.5C30.6,84.4,15.3,90.1,0.2,89.8C-14.9,89.5,-29.8,83.1,-43.3,74.7C-56.7,66.3,-68.8,55.9,-77.6,42.9C-86.4,29.8,-92,14.9,-91.3,0.4C-90.6,-14.1,-83.5,-28.2,-74.6,-40.3C-65.7,-52.4,-55,-62.4,-41.8,-70.3C-28.5,-78.1,-14.3,-83.7,0.7,-84.9C15.8,-86.1,31.5,-82.7,44.7,-76.4Z" transform="translate(100 100)" />
+                </svg>
+                <h2 class="text-5xl md:text-6xl font-black text-blue-900 tracking-tighter uppercase italic">Kidz <span class="text-white drop-shadow-sm">Zone</span></h2>
+              </div>
+              <p class="text-white font-bold drop-shadow-md text-lg md:text-xl">Area aman penuh imajinasi & petualangan!</p>
+            </div>
+
+            <div v-for="(kidCat, catIndex) in kidsCategories" :key="kidCat.id" class="mb-10 last:mb-6">
+               
+               <h3 class="relative z-10 text-xl md:text-2xl font-black text-white px-8 md:px-12 mb-4 drop-shadow-md flex items-center gap-2">
+                 <Star class="w-6 h-6 text-yellow-400 fill-yellow-400" />
+                 {{ kidCat.title }}
+               </h3>
+
+               <div 
+               
+                 class="relative z-10 flex gap-5 overflow-x-auto hide-scrollbar pb-6 px-8 md:px-12 snap-x overscroll-x-contain"
+               >
+                  <div v-for="movie in kidCat.movies" :key="movie.id" @click="openPlayer(movie)"
+                       :class="[
+                         'relative flex-none rounded-3xl overflow-hidden bg-white/10 backdrop-blur-sm transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer border border-white/20 shadow-[0_10px_30px_rgba(0,0,0,0.2)] snap-center will-change-transform',
+                         kidCat.layout === 'portrait' ? 'w-[160px] md:w-[200px] aspect-[2/3]' : 'w-[280px] md:w-[350px] aspect-video'
+                       ]">
+                    
+                    <div class="absolute inset-0 rounded-3xl shadow-[0_0_40px_rgba(250,204,21,0.4)] opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none"></div>
+
+                    <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/50 animate-pulse transition-opacity duration-500 z-0"></div>
+
+                    <img :src="getImageUrl(kidCat.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 'w500')" 
+                         class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                         style="opacity: 0; transform: scale(1.05);" 
+                         @load="handleImageLoad" />
+
+                    <div class="absolute z-20 inset-0 bg-gradient-to-t from-blue-900/90 via-blue-900/30 to-transparent p-4 flex flex-col justify-end items-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                       <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" :class="kidCat.layout === 'portrait' ? 'max-w-[100px] max-h-[40px]' : 'max-w-[150px] max-h-[50px]'" class="object-contain drop-shadow-lg mb-2 transform group-hover:scale-110 transition-transform origin-bottom" />
+                       <h4 v-else class="text-sm font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center mb-2 text-white">{{ movie.title || movie.name }}</h4>
+                       
+                       <div class="w-10 h-10 md:w-12 md:h-12 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center transform scale-50 group-hover:scale-100 transition-transform duration-300 shadow-lg mt-1">
+                          <Play class="w-5 h-5 md:w-6 md:h-6 fill-current" />
+                       </div>
+                    </div>
+
+                    <div class="absolute top-3 right-3 z-30 flex items-center gap-2">
+                      <button @click.stop="openInfo(movie)" class="p-1.5 md:p-2 bg-black/40 hover:bg-yellow-400 hover:text-blue-900 rounded-full backdrop-blur-md transition-colors border border-white/20 hover:border-yellow-400">
+                         <Info class="w-4 h-4 text-white hover:text-blue-900" />
+                      </button>
+                      <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-1.5 md:p-2 bg-black/40 hover:bg-yellow-400 rounded-full backdrop-blur-md transition-colors border border-white/20 hover:border-yellow-400">
+                        <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-blue-900 font-bold" />
+                        <Bookmark v-else class="w-4 h-4 text-white hover:text-blue-900" />
+                      </button>
+                    </div>
+                 </div>
+               </div>
+            </div>
+
           </div>
         </section>
 
