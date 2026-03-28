@@ -257,20 +257,38 @@ const filteredResults = computed(() => {
 });
 
 // --- LOGIC FILTER KHUSUS WATCHLIST ---
-const watchlistFilter = ref('all'); // 'all', 'movie', atau 'tv'
+// --- LOGIC MODAL HISTORY & WATCHLIST ---
+// State untuk menentukan tab mana yang aktif ('history' atau 'watchlist')
+const activeModalTab = ref('history'); 
 
-const setWatchlistFilter = (type) => {
-  watchlistFilter.value = type;
+// State untuk filter media (all, movie, tv)
+const modalFilter = ref('all'); 
+
+// Fungsi untuk mengganti Tab (History vs Watchlist)
+const setModalTab = (tab) => {
+  activeModalTab.value = tab;
+  modalFilter.value = 'all'; // Reset filter saat ganti tab
 };
 
-// Bikin computed buat nge-filter film berdasarkan pilihan
-const filteredWatchlistMovies = computed(() => {
-  if (watchlistFilter.value === 'all') {
-    return watchlistMovies.value;
-  }
-  return watchlistMovies.value.filter(m => m.media_type === watchlistFilter.value);
+// Fungsi untuk mengganti Filter (All, Movie, TV)
+const setModalFilter = (type) => {
+  modalFilter.value = type;
+  // Pastikan tetap di tab History jika memencet filter film/tv
+  activeModalTab.value = 'history'; 
+};
+
+// Computed property untuk memfilter History
+const filteredWatchHistoryMovies = computed(() => {
+  if (modalFilter.value === 'all') return watchHistoryMovies.value;
+  return watchHistoryMovies.value.filter(m => m.media_type === modalFilter.value);
 });
 
+// Computed property untuk memfilter Watchlist
+const filteredWatchlistMovies = computed(() => {
+  // Note: Saat ini tombol filter khusus Watchlist belum dibuat di sidebar, 
+  // tapi kita siapkan logic-nya untuk masa depan.
+  return watchlistMovies.value; 
+});
 
 const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
 const WYZIE_API_KEY = import.meta.env.VITE_WYZIE_API_KEY; 
@@ -1118,37 +1136,53 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <Transition name="vision-pro">
-      <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[50]   flex items-center justify-center p-4 md:p-10 backdrop-blur-md  " @click.self="toggleWatchlist">
-      
+   <Transition name="vision-pro">
+      <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[50] flex items-center justify-center p-4 md:p-10 backdrop-blur-md  transition-all duration-500" @click.self="toggleWatchlist">
+        
         <div class="absolute inset-0 overflow-hidden pointer-events-none">
-            <div class="absolute top-1/4 left-1/4 w-100 h-100 bg-blue-500 rounded-full mix-blend-screen filter blur-[100px] animate-pulse"></div>
-            <div class="absolute bottom-1/4 right-1/4 w-100 h-100 bg-purple-500 rounded-full mix-blend-screen filter blur-[100px] animate-pulse" style="animation-delay: 2s;"></div>
+            <div class="absolute top-1/4 left-1/4 w-[30rem] h-[30rem] bg-blue-500 rounded-full mix-blend-screen filter blur-[100px] animate-pulse opacity-30"></div>
+            <div class="absolute bottom-1/4 right-1/4 w-[30rem] h-[30rem] bg-purple-500 rounded-full mix-blend-screen filter blur-[100px] animate-pulse opacity-30" style="animation-delay: 2s;"></div>
         </div>
 
         <aside class="fixed right-4 md:right-10 top-1/2 -translate-y-1/2 z-50 hidden lg:flex flex-col gap-6 liquid-glass-pane px-3 py-6 backdrop-blur-3xl shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] border border-white/10 items-center w-16">
-          <div @click="setWatchlistFilter('all')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="watchlistFilter === 'all' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+          
+          <div @click="setModalFilter('all')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'all' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
             <PlayCircle class="w-5 h-5 transition-transform group-hover:scale-110" />
+            <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">All History</div>
           </div>
+          
           <div class="w-8 h-[1px] bg-white/10 rounded-full"></div>
-          <div @click="setWatchlistFilter('movie')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="watchlistFilter === 'movie' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+          
+          <div @click="setModalFilter('movie')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'movie' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
             <Film class="w-5 h-5 transition-transform group-hover:scale-110" />
+            <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Movies History</div>
           </div>
-          <div @click="setWatchlistFilter('tv')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="watchlistFilter === 'tv' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+          
+          <div @click="setModalFilter('tv')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'tv' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
             <Tv class="w-5 h-5 transition-transform group-hover:scale-110" />
+            <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">TV Shows History</div>
           </div>
+
+          <div class="w-8 h-[1px] bg-white/10 rounded-full"></div>
+
+          <div @click="setModalTab('watchlist')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'watchlist' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+            <Bookmark class="w-5 h-5 transition-transform group-hover:scale-110" />
+            <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Saved Items</div>
+          </div>
+
         </aside>
 
-        <div class="liquid-glass-pane  shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] border border-white/10            bg-gradient-to-br from-white/10 via-white/5 to-transparent relative w-full max-w-6xl h-[80vh] flex flex-col z-10" @click.stop>
+        <div class="liquid-glass-pane shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] border border-white/10 bg-gradient-to-br from-white/10 via-white/5 to-transparent relative w-full max-w-6xl h-[80vh] flex flex-col z-10" @click.stop>
           
-          <div class="px-8 py-4 md:px-7 md:py-4 flex justify-between items-center border-b border-white/5 bg-white/5  z-20" style="     border-radius: 3em 3em 0px 0px; ">
+          <div class="px-8 py-4 md:px-7 md:py-4 flex justify-between items-center border-b border-white/5 bg-white/5 z-20 rounded-t-[3rem]">
             <div class="flex items-center gap-5">
-                <div class="p-3.5 bg-white/10 rounded-3xl shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)]  border border-white/20">
-                  <Bookmark class="w-4 h-4 text-white fill-white/20" />
+                <div class="p-3.5 bg-white/10 rounded-3xl shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-white/20">
+                  <Play v-if="activeModalTab === 'history'" class="w-4 h-4 text-white fill-white/20" />
+                  <Bookmark v-else class="w-4 h-4 text-white fill-white/20" />
                 </div>
                 <div>
-                  <h5 class="text-md md:text-3xl font-bold tracking-tight text-white" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-                    My Watchlist
+                  <h5 class="text-xl md:text-3xl font-bold tracking-tight text-white">
+                    {{ activeModalTab === 'history' ? 'My Watch History' : 'Saved Items' }}
                   </h5>
                 </div>
             </div>
@@ -1158,69 +1192,94 @@ onUnmounted(() => {
             </button>
           </div>
 
-          <div  data-lenis-prevent class="flex-1 overflow-y-auto hide-scrollbar p-8 md:p-12 relative z-10 pb-32">
+          <div data-lenis-prevent class="flex-1 overflow-y-auto hide-scrollbar p-8 md:p-12 relative z-10 pb-32">
             
-            <div v-if="watchlistMovies.length === 0" class="h-full flex flex-col items-center justify-center relative z-10">
-            <div class="w-32 h-32 mb-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10 shadow-[0_0_60px_rgba(255,255,255,0.1),inset_0_1px_2px_rgba(255,255,255,0.3)] relative group cursor-pointer hover:scale-105 transition-transform duration-500 " @click="toggleWatchlist">
-              <Bookmark class="w-12 h-12 text-white/50 group-hover:text-white transition-colors" />
-              <div class="absolute inset-0 rounded-full border-t-2 border-white/40 animate-spin opacity-30"></div>
-            </div>
-            <h3 class="text-2xl font-bold mb-2 text-white tracking-tight">Your Collection is Still Empty</h3>
-            <p class="text-white/50 max-w-md text-center mb-8 leading-relaxed font-medium">
-              Explore awesome movies and series, then save them to your personal watchlist.
-            </p>
-            <Button @click="toggleWatchlist" class="bg-white/10 backdrop-blur-xl border border-white/20 text-white hover:bg-white hover:text-black rounded-full px-8 py-6 font-bold transition-all duration-300 shadow-[0_10px_30px_rgba(0,0,0,0.2)] hover:scale-105">
-              Start Exploring
-            </Button>
-          </div>
+            <template v-if="activeModalTab === 'history'">
+              <div v-if="watchHistoryMovies.length === 0" class="h-full flex flex-col items-center justify-center">
+                <div class="w-24 h-24 mb-6 rounded-full bg-white/5 flex items-center justify-center border border-white/10 backdrop-blur-md">
+                  <PlayCircle class="w-8 h-8 text-white/40" />
+                </div>
+                <h3 class="text-2xl font-bold mb-2 text-white">No Watch History</h3>
+                <p class="text-white/50 mb-8">You haven't watched anything yet.</p>
+              </div>
 
-          <div v-else-if="filteredWatchlistMovies.length === 0" class="h-full flex flex-col items-center justify-center relative z-10 mt-20">
-            <div class="w-24 h-24 mb-6 rounded-full bg-white/5 flex items-center justify-center border border-white/10 shadow-lg backdrop-blur-md">
-              <Filter class="w-8 h-8 text-white/40" />
-            </div>
-            <h3 class="text-xl font-bold mb-2 text-white/70 tracking-tight">
-              No {{ watchlistFilter === 'movie' ? 'Movies' : 'TV Series' }} in your Watchlist.
-            </h3>
-            <p class="text-white/40 text-sm">
-              Try selecting another category or add something new to watch.
-            </p>
-          </div>
-            <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-              <div v-for="movie in filteredWatchlistMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none rounded-3xl overflow-hidden bg-black/40 transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer will-change-transform aspect-[2/3] col-span-1 shadow-[0_20px_40px_rgba(0,0,0,0.4)] border border-white/10">
-      
-                <div class="absolute inset-0 rounded-3xl shadow-[0_0_40px_rgba(255,255,255,0.15)] opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none z-30"></div>
-                
-                <div class="skeleton-overlay absolute inset-0 bg-white/5 animate-pulse transition-opacity duration-500 z-0"></div>
+              <div v-else-if="filteredWatchHistoryMovies.length === 0" class="h-full flex flex-col items-center justify-center">
+                <h3 class="text-xl font-bold text-white/50">No {{ modalFilter === 'movie' ? 'Movies' : 'TV Series' }} in your history.</h3>
+              </div>
 
-                <img :src="movie.poster_path || movie.backdrop_path ? getImageUrl(movie.poster_path || movie.backdrop_path, 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'" 
-                     class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
-                     style="opacity: 0; transform: scale(1.05);" 
-                     @load="handleImageLoad" />
-
-                <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent p-4 flex flex-col justify-end items-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300 ">
-                  <div class="mb-2">
-                    <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-bottom" />
-                    <h4 v-else class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center text-white">{{ movie.title || movie.name }}</h4>
+             <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div v-for="movie in filteredWatchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none rounded-3xl overflow-hidden bg-black/40 transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer border border-white/10 aspect-video col-span-1 shadow-2xl">
+                  
+                  <div class="skeleton-overlay absolute inset-0 bg-white/5 animate-pulse z-0"></div>
+                  
+                  <img :src="movie.backdrop_path || movie.poster_path ? getImageUrl(movie.backdrop_path || movie.poster_path, 'w780') : 'https://via.placeholder.com/780x438?text=No+Image'" 
+                       class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                       style="opacity: 0; transform: scale(1.05);" 
+                       @load="handleImageLoad" />
+                  
+                  <div class="absolute bottom-0 left-0 w-full h-1.5 bg-black/80 z-30">
+                    <div class="h-full bg-blue-500 rounded-r-full shadow-[0_0_10px_rgba(59,130,246,0.8)]" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
                   </div>
-                </div>
 
-                <div class="absolute top-3 right-3 z-30 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                  <button @click.stop="openInfo(movie)" class="p-2 bg-black/40 hover:bg-white hover:text-black rounded-full transition-colors border border-white/20 ">
-                    <Info class="w-4 h-4 text-inherit" />
-                  </button>
-                  <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/40 hover:bg-red-500 rounded-full transition-colors border border-white/20 ">
-                    <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-white font-black" />
-                    <Bookmark v-else class="w-4 h-4 text-white" />
-                  </button>
-                </div>
+                  <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-5 flex flex-col justify-end items-start opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                    <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg mb-1 transform group-hover:scale-110 transition-transform origin-bottom-left" />
+                    <h4 v-else class="text-sm font-black uppercase tracking-tighter line-clamp-1 drop-shadow-md text-white mb-1">{{ movie.title || movie.name }}</h4>
+                  </div>
 
-                <div class="absolute inset-0 flex items-center justify-center duration-300">
-                   <div class="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center border border-white/40 transition-transform  shadow-xl">
-                      <Play class="w-6 h-6 text-white fill-current" />
-                   </div>
+                  <div class="absolute top-3 right-3 z-30 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <button @click.stop="openInfo(movie)" class="p-2 bg-black/40 hover:bg-white hover:text-black rounded-full transition-colors border border-white/20 backdrop-blur-xl">
+                      <Info class="w-4 h-4 text-inherit" />
+                    </button>
+                    <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/40 hover:bg-yellow-400 rounded-full transition-colors border border-white/20 hover:border-yellow-400 backdrop-blur-xl">
+                      <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-blue-900 font-black" />
+                      <Bookmark v-else class="w-4 h-4 text-white hover:text-blue-900" />
+                    </button>
+                    <button @click.stop="handleRemoveHistory(movie)" class="p-2 bg-black/40 hover:bg-red-600 rounded-full transition-colors border border-white/20 hover:border-red-500 backdrop-blur-xl">
+                      <X class="w-4 h-4 text-white" />
+                    </button>
+                  </div>
+
+                  <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+                     <div class="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center border border-white/40 transform scale-50 group-hover:scale-100 transition-transform backdrop-blur-md shadow-xl">
+                        <Play class="w-6 h-6 text-white fill-current" />
+                     </div>
+                  </div>
+
                 </div>
               </div>
-            </div>
+            </template>
+
+            <template v-else>
+              <div v-if="filteredWatchlistMovies.length === 0" class="h-full flex flex-col items-center justify-center">
+                <div class="w-24 h-24 mb-6 rounded-full bg-white/5 flex items-center justify-center border border-white/10 backdrop-blur-md">
+                  <Bookmark class="w-8 h-8 text-white/40" />
+                </div>
+                <h3 class="text-2xl font-bold mb-2 text-white">Your Saved List is Empty</h3>
+                <p class="text-white/50 mb-8">Save movies and series to watch them later.</p>
+              </div>
+
+              <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                <div v-for="movie in filteredWatchlistMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none rounded-3xl overflow-hidden bg-black/40 transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer border border-white/10 aspect-[2/3] col-span-1 shadow-2xl">
+                  <div class="skeleton-overlay absolute inset-0 bg-white/5 animate-pulse z-0"></div>
+                  <img :src="movie.poster_path || movie.backdrop_path ? getImageUrl(movie.poster_path || movie.backdrop_path, 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'" class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" style="opacity: 0; transform: scale(1.05);" @load="handleImageLoad" />
+                  
+                  <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent p-4 flex flex-col justify-end items-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg" />
+                    <h4 v-else class="text-sm font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center text-white">{{ movie.title || movie.name }}</h4>
+                  </div>
+                  
+                  <div class="absolute top-3 right-3 z-30 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                   <button @click.stop="openInfo(movie)" class="p-2 bg-black/40 hover:bg-white hover:text-black rounded-full transition-colors border border-white/20 ">
+                    <Info class="w-4 h-4 text-inherit" />
+                  </button>
+                    <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/40 hover:bg-red-500 rounded-full transition-colors border border-white/20">
+                      <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-white font-black" />
+                      <Bookmark v-else class="w-4 h-4 text-white" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </template>
 
           </div>
         </div>
@@ -1931,7 +1990,7 @@ onUnmounted(() => {
             :class="currentView === 'tv' ? 'text-white' : 'text-gray-400 group-hover:text-white'" 
           />
 
-          <Bookmark 
+          <PlayCircle 
             v-if="item.key === 'watchlist'" 
             class="w-6 h-6 transition-transform duration-200 ease-out"
             :style="activeMagnetIndex === index ? { transform: `translate(${magneticOffsets[index]?.x || 0}px, ${magneticOffsets[index]?.y || 0}px) scale(1.05)` } : {}"
