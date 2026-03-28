@@ -1894,7 +1894,7 @@ onUnmounted(() => {
 
         <div 
           class="absolute top-1 bottom-1 w-12  
-                bg-white/20 backdrop-blur-xl
+                bg-white/70 backdrop-blur-xl
                 transition-all duration-800 ease-[cubic-bezier(0.22,1,0.36,1)]"
           :style="sliderStyle"
         ></div>
