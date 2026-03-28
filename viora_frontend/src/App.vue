@@ -842,19 +842,14 @@ let lenisRafId;
 onMounted(() => {
   if (typeof window !== 'undefined') {
     lenis = new Lenis({
-        duration: 1,
-        smoothWheel: true
+        duration: 1.2, // Dibikin 1.2 biar scrollnya lebih kerasa "empuk"
+        easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // Easing khusus Lenis yang super mulus
+        smoothWheel: true,
+        wheelMultiplier: 1, // Kecepatan scroll standar
+        touchMultiplier: 2 // Biar scroll di touchpad nggak capek
     })
 
-    // Event listener bawaan Lenis
-    lenis.on('scroll', (e) => {
-       // Kalau lagi nge-scroll ngebut, matiin efek hover sementara
-       if (Math.abs(e.velocity) > 5) {
-         document.body.style.pointerEvents = 'none';
-       } else {
-         document.body.style.pointerEvents = 'auto';
-       }
-    });
+    // Hapus logic body.style.pointerEvents yang sebelumnya ada di sini, itu yang bikin rusak.
 
     function raf(time) {
         lenis.raf(time)
@@ -1108,51 +1103,77 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <Transition name="fade">
-      <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[100] bg-black/90 overflow-y-auto " @click.self="toggleWatchlist">
-        <div class="min-h-screen p-6 lg:p-12 pt-24 relative max-w-7xl mx-auto">
-          <button @click="toggleWatchlist" class="fixed top-8 right-8 p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors z-50 shadow-xl"><X class="w-6 h-6 text-white" /></button>
-          
-          <h2 class="text-4xl font-black mb-10 tracking-tight flex items-center gap-4">
-            <span class="w-2 h-10 bg-blue-500 rounded-full"></span> My <span class="text-blue-500">Watchlist</span>
-          </h2>
+    <Transition name="slide-up">
+      <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[45] bg-[#09090b]/85 backdrop-blur-2xl overflow-y-auto hide-scrollbar" @click.self="toggleWatchlist">
+        
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-blue-600/20 rounded-full blur-[120px] pointer-events-none"></div>
 
-          <div v-if="watchlistMovies.length === 0" class="flex flex-col items-center justify-center mt-32 text-gray-400">
-            <Bookmark class="w-16 h-16 mb-4 opacity-50" />
-            <p class="text-xl font-medium">Your watchlist is empty.</p>
-            <p class="text-sm mt-2">Save movies and series to watch them later.</p>
+        <div class="min-h-screen p-6 lg:p-12 pt-24 pb-40 relative max-w-7xl mx-auto flex flex-col">
+          
+          <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12 border-b border-white/10 pb-6 relative z-10">
+            <div>
+              <h2 class="text-4xl md:text-6xl font-black tracking-tighter flex items-center gap-4">
+                <Bookmark class="w-10 h-10 md:w-14 md:h-14 text-blue-500 fill-blue-500/20 drop-shadow-lg" />
+                My <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400">Watchlist</span>
+              </h2>
+              <p class="text-gray-400 font-medium mt-2 text-sm md:text-base ml-2">A collection of your favorite shows ready to be enjoyed.</p>
+            </div>
+            
+            <button @click="toggleWatchlist" class="group flex items-center gap-3 text-sm font-bold text-gray-400 hover:text-white transition-colors">
+              <span class="hidden md:block uppercase tracking-widest text-[10px]">Tutup</span> 
+              <X class="w-10 h-10 p-2 bg-white/5 border border-white/10 group-hover:bg-red-500 group-hover:border-red-500 rounded-full transition-all duration-300 transform group-hover:scale-110 group-hover:rotate-90" />
+            </button>
           </div>
 
-          <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
-          <div class="relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer will-change-transform aspect-[2/3] col-span-1">
-  
-            <div class="absolute inset-0 rounded-2xl shadow-[0_0_40px_rgba(59,130,246,0.3)] opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none"></div>
-              <img :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-110" />
+          <div v-if="watchlistMovies.length === 0" class="flex-1 flex flex-col items-center justify-center relative z-10 mt-10 md:mt-20">
+            <div class="w-32 h-32 mb-8 rounded-full bg-gradient-to-tr from-white/5 to-white/10 flex items-center justify-center border border-white/10 shadow-[0_0_60px_rgba(59,130,246,0.15)] relative group cursor-pointer hover:scale-105 transition-transform duration-500" @click="toggleWatchlist">
+              <Bookmark class="w-12 h-12 text-gray-500 group-hover:text-white transition-colors" />
+              <div class="absolute inset-0 rounded-full border-t-2 border-blue-500 animate-spin opacity-30"></div>
+            </div>
+            <h3 class="text-2xl font-black mb-2 text-white tracking-tight">Belum ada tontonan</h3>
+            <p class="text-gray-400 max-w-md text-center mb-8 leading-relaxed">Jelajahi film dan series keren, lalu klik tombol bookmark untuk menyimpannya di sini.</p>
+            <Button @click="toggleWatchlist" class="bg-white text-black hover:bg-blue-500 hover:text-white rounded-full px-8 py-6 font-bold transition-all duration-300 shadow-[0_10px_30px_rgba(255,255,255,0.1)] hover:shadow-[0_10px_30px_rgba(59,130,246,0.4)] hover:-translate-y-1">
+               Cari Tontonan Sekarang
+            </Button>
+          </div>
 
-              <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end" style="     align-items: center; ">
+          <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6 relative z-10">
+            <div v-for="movie in watchlistMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer will-change-transform aspect-[2/3] col-span-1">
+    
+              <div class="absolute inset-0 rounded-2xl shadow-[0_0_40px_rgba(59,130,246,0.3)] opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none"></div>
+              
+              <div class="skeleton-overlay absolute inset-0 bg-[#27272a] animate-pulse transition-opacity duration-500 z-0"></div>
+
+              <img :src="movie.poster_path || movie.backdrop_path ? getImageUrl(movie.poster_path || movie.backdrop_path, 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'" 
+                   class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
+                   style="opacity: 0; transform: scale(1.05);" 
+                   @load="handleImageLoad" />
+
+              <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-4 flex flex-col justify-end items-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                 <div class="mb-2">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                  <h4 v-else class="text-sm md:text-base font-black uppercase  tracking-tighter line-clamp-2 drop-shadow-md">{{ movie.title || movie.name }}</h4>
+                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-bottom" />
+                  <h4 v-else class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center">{{ movie.title || movie.name }}</h4>
                 </div>
               </div>
 
-              <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60  rounded-full transition-colors border border-white/20">
+              <div class="absolute top-3 right-3 z-30 flex items-center gap-2">
+                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full transition-colors border border-white/20 backdrop-blur-md">
                   <Info class="w-4 h-4 text-white" />
                 </button>
-                <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80  rounded-full transition-colors border border-white/20">
-                  <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
+                <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20 backdrop-blur-md">
+                  <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400 font-black" />
                   <Bookmark v-else class="w-4 h-4 text-white" />
                 </button>
               </div>
 
-              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300" @click="openPlayer(movie)">
-                 <div class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
+              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
+                 <div class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform backdrop-blur-sm">
                     <Play class="w-5 h-5 text-white fill-current" />
                  </div>
               </div>
             </div>
           </div>
+
         </div>
       </div>
     </Transition>
@@ -1662,7 +1683,7 @@ onUnmounted(() => {
                 </svg>
                 <h2 class="text-5xl md:text-6xl font-black text-blue-900 tracking-tighter uppercase italic">Kidz <span class="text-white drop-shadow-sm">Zone</span></h2>
               </div>
-              <p class="text-white font-bold drop-shadow-md text-lg md:text-xl">Area aman penuh imajinasi & petualangan!</p>
+              <p class="text-white font-bold drop-shadow-md text-lg md:text-xl">A safe area full of imagination & adventure!</p>
             </div>
 
             <div v-for="(kidCat, catIndex) in kidsCategories" :key="kidCat.id" class="mb-10 last:mb-6">
@@ -1686,7 +1707,7 @@ onUnmounted(() => {
 
                     <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/50 animate-pulse transition-opacity duration-500 z-0"></div>
 
-                    <img :src="getImageUrl(kidCat.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 'w500')" 
+                    <img :src="movie.poster_path || movie.backdrop_path ? getImageUrl(kidCat.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'"
                          class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
                          style="opacity: 0; transform: scale(1.05);" 
                          @load="handleImageLoad" />
