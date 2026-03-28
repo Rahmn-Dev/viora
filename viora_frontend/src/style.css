@@ -98,3 +98,39 @@ html {
   opacity: 0;
   transform: translateY(40px) scale(0.98);
 }
+
+
+/* Animasi Melayang masuk ala VisionOS */
+.vision-pro-enter-active, .vision-pro-leave-active {
+  transition: all 0.6s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.vision-pro-enter-from, .vision-pro-leave-to {
+  opacity: 0;
+  transform: scale(0.95) translateY(20px);
+}
+
+/* Masterpiece Liquid Glass Pane */
+.liquid-glass-pane {
+  
+   /* background: linear-gradient(135deg, rgba(255, 255, 255, 0.412) 0%, rgba(255,255,255,0.02) 100%); */
+   border-radius: 3rem;
+   /* box-shadow: 
+     0 30px 60px -15px rgba(0,0,0,0.6), 
+     inset 0 1px 1px rgba(255, 255, 255, 0.631), 
+     inset 0 -1px 1px rgba(255, 255, 255, 0.522);  */
+}
+
+/* Trik membuat border gradient yang tipis ala Apple */
+/* .liquid-glass-pane::before {
+   content: '';
+   position: absolute;
+   inset: 0;
+   border-radius: inherit;
+   padding: 1px; 
+   background: linear-gradient(135deg, rgb(255, 255, 255), transparent 40%, rgba(255,255,255,0.1));
+   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+   -webkit-mask-composite: xor;
+   mask-composite: exclude;
+   pointer-events: none;
+   z-index: 50;
+} */
