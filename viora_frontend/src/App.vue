@@ -1,5 +1,5 @@
 <script setup>
-axios.defaults.baseURL = import.meta.env.VITE_API_URL;
+axios.defaults.baseURL = 'http://192.168.101.41:8000';
 
 axios.interceptors.response.use(
   res => res,
@@ -51,7 +51,6 @@ const magneticOffsets = ref({})
 const activeMagnetIndex = ref(null)
 const activeMagnet = ref(null)
 const kidsZoneMovie = ref(null);
-// --- LOGIC FILTER KHUSUS WATCHLIST ---
 
 const resetMagnet = () => {
   magneticOffset.value = { x: 0, y: 0 }
@@ -61,7 +60,6 @@ const startHeroCardAutoScroll = () => {
   if (heroCardAutoScrollTimer) clearInterval(heroCardAutoScrollTimer);
   
   heroCardAutoScrollTimer = setInterval(() => {
-    // Kalau user lagi hover/sentuh card, carousel pause sebentar
     if (isHoveringHeroCard.value) return; 
 
     const containers = document.querySelectorAll('.hero-card-carousel');
@@ -69,17 +67,16 @@ const startHeroCardAutoScroll = () => {
       const firstChild = container.children[0];
       if (!firstChild) return;
 
-      const scrollAmount = firstChild.offsetWidth + 24; // Lebar card + gap-6 (24px)
+      const scrollAmount = firstChild.offsetWidth + 24; 
       const isAtEnd = container.scrollLeft + container.clientWidth >= container.scrollWidth - 10;
 
-      // Kalau sudah di ujung kanan, balik ke kiri. Kalau belum, geser ke kanan.
       if (isAtEnd) {
         container.scrollTo({ left: 0, behavior: 'smooth' });
       } else {
         container.scrollBy({ left: scrollAmount, behavior: 'smooth' });
       }
     });
-  }, 4000); // Carousel geser tiap 4 detik
+  }, 4000); 
 };
 
 const sliderStyle = computed(() => {
@@ -90,14 +87,14 @@ const sliderStyle = computed(() => {
     return {
       transform: `translateX(${index * 56}px) scaleX(2) scaleY(0.2)`,
       borderRadius: '15px',
-      boxShadow: '0 0 20px rgba(255, 255, 255, 2)' // 👈 Glow saat gerak
+      boxShadow: '0 0 20px rgba(255, 255, 255, 2)' 
     }
   }
 
   return {
     transform: `translateX(${index * 56}px) scaleX(${isHovering ? 1 : 0.9}) scaleY(0.8)`,
     borderRadius: '20px',
-    boxShadow: '0 0 15px rgba(255, 255, 255, 1)' // 👈 Glow diam
+    boxShadow: '0 0 15px rgba(255, 255, 255, 1)' 
   }
 })
 
@@ -166,8 +163,8 @@ const handleMouseMove = (e) => {
 const heroMovies = ref([]);
 const currentHeroIndex = ref(0);
 const movieCategories = ref([]);
-const kidsZoneMovies = ref([]); // 👈 State untuk carousel Kidz Zone
-const kidsCategories = ref([]); // 👈 Ubah namanya biar bisa nampung banyak baris
+const kidsZoneMovies = ref([]); 
+const kidsCategories = ref([]); 
 const isLoading = ref(true);
 const isScrolled = ref(false);
 let heroTimer = null;
@@ -178,10 +175,15 @@ const searchResults = ref([]);
 const isSearching = ref(false);
 let searchTimeout = null;
 
-// --- SEARCH FILTER STATE ---
+// --- SEARCH FILTER & PAGINATION STATE ---
 const selectedYear = ref('');
 const selectedGenre = ref('');
+const selectedType = ref(''); // Baru: Filter Movie/TV
 const searchGenres = ref([]);
+
+const searchPage = ref(1); // Baru: Pagination
+const isSearchingMore = ref(false); // Baru: Loading infinite scroll
+const hasMoreSearchResults = ref(true); // Baru: Cek kalau udah nyampe akhir
 
 const isLoggedIn = ref(false);
 const currentUser = ref({ username: '' });
@@ -251,42 +253,35 @@ const filteredResults = computed(() => {
     const genreMatch = selectedGenre.value
       ? item.genre_ids?.includes(Number(selectedGenre.value))
       : true;
+      
+    // Filter tipe (Movie / TV)
+    const typeMatch = selectedType.value
+      ? item.media_type === selectedType.value
+      : true;
 
-    return yearMatch && genreMatch;
+    return yearMatch && genreMatch && typeMatch;
   });
 });
 
-// --- LOGIC FILTER KHUSUS WATCHLIST ---
-// --- LOGIC MODAL HISTORY & WATCHLIST ---
-// State untuk menentukan tab mana yang aktif ('history' atau 'watchlist')
 const activeModalTab = ref('history'); 
-
-// State untuk filter media (all, movie, tv)
 const modalFilter = ref('all'); 
 
-// Fungsi untuk mengganti Tab (History vs Watchlist)
 const setModalTab = (tab) => {
   activeModalTab.value = tab;
-  modalFilter.value = 'all'; // Reset filter saat ganti tab
+  modalFilter.value = 'all'; 
 };
 
-// Fungsi untuk mengganti Filter (All, Movie, TV)
 const setModalFilter = (type) => {
   modalFilter.value = type;
-  // Pastikan tetap di tab History jika memencet filter film/tv
   activeModalTab.value = 'history'; 
 };
 
-// Computed property untuk memfilter History
 const filteredWatchHistoryMovies = computed(() => {
   if (modalFilter.value === 'all') return watchHistoryMovies.value;
   return watchHistoryMovies.value.filter(m => m.media_type === modalFilter.value);
 });
 
-// Computed property untuk memfilter Watchlist
 const filteredWatchlistMovies = computed(() => {
-  // Note: Saat ini tombol filter khusus Watchlist belum dibuat di sidebar, 
-  // tapi kita siapkan logic-nya untuk masa depan.
   return watchlistMovies.value; 
 });
 
@@ -298,12 +293,10 @@ const getImageUrl = (path, width = 'w500') => {
   if (!path) return 'https://via.placeholder.com/300x450?text=No+Image';
   const tmdbUrl = `https://image.tmdb.org/t/p/${width}${path}`;
   
-  // Kalau kualitas aslinya 'original' atau 'w780', wajar kualitas tinggi (q=80)
   if (width === 'original' || width === 'w780') {
     return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=80&n=-1`;
   }
   
-  // Tapi untuk thumbnail kecil (w300 atau w500), turunin kualitas jadi 60% dan pastikan resolusinya gak kebesaran
   return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=60&w=300&n=-1`;
 };
 
@@ -359,15 +352,12 @@ const fetchAllData = async () => {
       axios.get(`${BASE_URL}/tv/top_rated?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_origin_country=KR`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`),
-      // --- TAMBAHAN KHUSUS KIDZ ZONE ---
-      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=10751`), // Family
-      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=10762`), // Kids TV
-      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_original_language=ja`) // Anime TV
+      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=10751`), 
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=10762`), 
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_original_language=ja`) 
     ]);
 
     const validTrending = trending.data.results.filter(m => m.vote_average > 0);
-    
-    // Baru potong 8 teratas
     heroMovies.value = await enrichMoviesWithLogos(validTrending.slice(0, 8));
     
     const categoriesData = [
@@ -458,7 +448,6 @@ const fetchGenres = async () => {
 
 const fetchSearchGenres = async () => {
   try {
-    // Combine Movie & TV genres for universal search filter
     const [movieRes, tvRes] = await Promise.all([
       axios.get(`${BASE_URL}/genre/movie/list?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/genre/tv/list?api_key=${API_KEY}`)
@@ -485,9 +474,8 @@ const applyFilters = async () => {
 const changeView = async (viewType) => {
   if (currentView.value === viewType) return; 
   
-  // Gunakan lenis.scrollTo jika lenis sudah aktif, fallback ke native window.scrollTo
   if (lenis) {
-    lenis.scrollTo(0, { immediate: false }); // Ubah jadi immediate: true kalau mau instan tanpa animasi smooth
+    lenis.scrollTo(0, { immediate: false }); 
   } else {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -518,32 +506,26 @@ const changeView = async (viewType) => {
   isBrowseLoading.value = false;
 };
 const handleImageLoad = (e) => {
-  // 1. Munculkan gambar aslinya (fade in)
   e.target.style.opacity = '1';
-  e.target.style.transform = 'scale(1)'; // reset scale biar rapi
+  e.target.style.transform = 'scale(1)'; 
 
-  // 2. Sembunyikan elemen skeleton pelan-pelan
   const skeleton = e.target.previousElementSibling;
   if (skeleton && skeleton.classList.contains('skeleton-overlay')) {
     skeleton.style.opacity = '0';
-    // Hapus dari DOM setelah animasi selesai (biar enteng)
     setTimeout(() => skeleton.remove(), 500); 
   }
 };
-// --- SMOOTH HORIZONTAL SCROLL ALA LENIS ---
+
 const smoothHorizontalScroll = (e) => {
-  // Pastikan fungsi ini cuma jalan kalau user BENERAN scroll ke samping (deltaX)
-  // atau pakai Shift + Scroll atas-bawah (deltaY)
   const isHorizontalScroll = Math.abs(e.deltaX) > 0 || (e.shiftKey && Math.abs(e.deltaY) > 0);
 
   if (isHorizontalScroll) {
-    e.preventDefault(); // Matikan scroll bawaan browser yang patah-patah
+    e.preventDefault(); 
     
-    // Ambil nilai arah scroll-nya
     const scrollAmount = e.deltaX !== 0 ? e.deltaX : e.deltaY;
     
     e.currentTarget.scrollBy({
-      left: scrollAmount * 4, // Kalikan 4 biar dapat momentum luncuran yang jauh & smooth
+      left: scrollAmount * 4, 
       behavior: 'smooth'
     });
   }
@@ -661,14 +643,65 @@ const handleWatchlistToggle = async (movie, type = null) => {
   } catch (err) { console.error("❌ Failed to update watchlist", err); }
 };
 
+// --- LOGIC SEARCH INITIAL FETCH (Page 1) ---
 const performSearch = async () => {
-  if (!searchQuery.value.trim()) { searchResults.value = []; return; }
+  if (!searchQuery.value.trim()) { 
+    searchResults.value = []; 
+    hasMoreSearchResults.value = false;
+    return; 
+  }
+  
   isSearching.value = true;
+  searchPage.value = 1;
+  hasMoreSearchResults.value = true;
+  
   try {
-    const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false`);
+    const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false&page=1`);
+    // Filter out person/other types
     const rawResults = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv');
     searchResults.value = await enrichMoviesWithLogos(rawResults);
-  } catch (error) { console.error(error); } finally { isSearching.value = false; }
+    
+    if (res.data.page >= res.data.total_pages) {
+      hasMoreSearchResults.value = false;
+    }
+  } catch (error) { 
+    console.error(error); 
+  } finally { 
+    isSearching.value = false; 
+  }
+};
+
+// --- LOGIC SEARCH INFINITE SCROLL (Page > 1) ---
+const loadMoreSearchResults = async () => {
+  if (isSearchingMore.value || !hasMoreSearchResults.value || !searchQuery.value.trim()) return;
+  
+  isSearchingMore.value = true;
+  searchPage.value++;
+  
+  try {
+    const res = await axios.get(`${BASE_URL}/search/multi?api_key=${API_KEY}&query=${encodeURIComponent(searchQuery.value)}&include_adult=false&page=${searchPage.value}`);
+    const rawResults = res.data.results.filter(item => item.media_type === 'movie' || item.media_type === 'tv');
+    const newEnriched = await enrichMoviesWithLogos(rawResults);
+    
+    searchResults.value = [...searchResults.value, ...newEnriched];
+    
+    if (res.data.page >= res.data.total_pages) {
+      hasMoreSearchResults.value = false;
+    }
+  } catch (error) {
+    console.error(error);
+  } finally {
+    isSearchingMore.value = false;
+  }
+};
+
+// --- DETECT SCROLL IN SEARCH MODAL ---
+const handleSearchScroll = (e) => {
+  const { scrollTop, scrollHeight, clientHeight } = e.target;
+  // Trigger fetch if scrolled near bottom (50px threshold)
+  if (scrollTop + clientHeight >= scrollHeight - 50) {
+    loadMoreSearchResults();
+  }
 };
 
 const onSearchInput = () => {
@@ -809,10 +842,9 @@ const handleScroll = () => {
       isScrolled.value = window.scrollY > 50;
       ticking = false;
       if (!isLoggedIn.value && (currentView.value === 'movie' || currentView.value === 'tv')) {
-        // Kalau scroll udah lewat 1200px dan belum pernah dimunculin otomatis
         if (window.scrollY > 1200 && !hasShownAutoLogin.value && !isLoginOpen.value) {
           isLoginOpen.value = true;
-          hasShownAutoLogin.value = false; // Set true biar gak spam muncul terus
+          hasShownAutoLogin.value = false; 
         }
       }
       
@@ -841,7 +873,6 @@ const handleKeydown = (e) => {
 
 const startHeroCarousel = () => {
   if(heroTimer) clearInterval(heroTimer);
-  // if(currentView.value !== 'home') return;
   heroTimer = setInterval(() => {
     if(activeHeroMovies.value.length > 0) {
       currentHeroIndex.value = (currentHeroIndex.value + 1) % activeHeroMovies.value.length;
@@ -851,7 +882,6 @@ const startHeroCarousel = () => {
 
 const navItems = [
   { key: 'home', action: () => changeView('home') },
-  // { key: 'search', action: toggleSearch },
   { key: 'movie', action: () => changeView('movie') },
   { key: 'tv', action: () => changeView('tv') },
   { key: 'watchlist', action: toggleWatchlist }
@@ -875,14 +905,12 @@ let lenisRafId;
 onMounted(() => {
   if (typeof window !== 'undefined') {
     lenis = new Lenis({
-        duration: 1.2, // Dibikin 1.2 biar scrollnya lebih kerasa "empuk"
-        easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), // Easing khusus Lenis yang super mulus
+        duration: 1.2, 
+        easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)), 
         smoothWheel: true,
-        wheelMultiplier: 1, // Kecepatan scroll standar
-        touchMultiplier: 2 // Biar scroll di touchpad nggak capek
+        wheelMultiplier: 1, 
+        touchMultiplier: 2 
     })
-
-    // Hapus logic body.style.pointerEvents yang sebelumnya ada di sini, itu yang bikin rusak.
 
     function raf(time) {
         lenis.raf(time)
@@ -901,7 +929,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (lenisRafId) cancelAnimationFrame(lenisRafId); // Batalin raf-nya!
+  if (lenisRafId) cancelAnimationFrame(lenisRafId); 
   if (lenis) lenis.destroy();
   window.removeEventListener('mousemove', handleMouseMove)
   window.removeEventListener('scroll', handleScroll);
@@ -984,11 +1012,11 @@ onUnmounted(() => {
                 </div>
 
                 <div class="flex gap-3 mt-2">
-                  <div class="flex items-center gap-1 bg-white/10  border border-white/20 rounded-xl px-3 py-1">
+                  <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
                     <Star class="w-4 h-4 text-yellow-400" />
                     <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.vote_average }}/10</span>
                   </div>
-                  <div class="flex items-center gap-1 bg-white/10 border border-white/20 rounded-xl px-3 py-1">
+                  <div class="flex items-center gap-1 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-3 py-1">
                     <Flame class="w-4 h-4 text-red-400" />
                     <span class="text-gray-300 text-xs font-medium">{{ selectedMovieInfo.popularity?.toFixed(1) }}</span>
                   </div>
@@ -1001,7 +1029,7 @@ onUnmounted(() => {
                   <div v-if="selectedMovieInfo.seasons?.length" class="mt-6">
                     <h3 class="text-lg font-bold mb-3 flex items-center gap-2"><span class="w-1.5 h-6 bg-blue-500 rounded-full"></span> Seasons</h3>
                     <div class="flex gap-4 overflow-x-auto pb-2">
-                      <div v-for="season in selectedMovieInfo.seasons.map(s => ({ ...s, media_type: 'tv', season: s.season_number ?? 1, episode: 1, showId:selectedMovieInfo.id, logo_path: selectedMovieInfo.logo_path}))" :key="season.id" class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300" @click="openPlayer(season)">
+                      <div v-for="season in selectedMovieInfo.seasons.map(s => ({ ...s, media_type: 'tv', season: s.season_number ?? 1, episode: 1, showId:selectedMovieInfo.id}))" :key="season.id" class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300" @click="openPlayer(season)">
                         <div class="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg">
                           <img :src="getImageUrl(season.poster_path, 'w300')" class="w-full h-full object-cover" :alt="season.name" />
                           <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 text-center">{{ season.episode_count }} eps</div>
@@ -1021,17 +1049,8 @@ onUnmounted(() => {
               <h4 class="text-white font-bold mb-2">Cast</h4>
               <div class="flex gap-4 overflow-x-auto py-2">
                 <div v-for="actor in selectedMovieInfo.cast" :key="actor.id" class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-1">
-                 <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0 flex items-center justify-center border border-white/10">
-                    <img 
-                      v-if="actor.profile_path" 
-                      :src="getImageUrl(actor.profile_path, 'w185')" 
-                      :alt="actor.name" 
-                      class="w-full h-full object-cover" 
-                    />
-                    <UserIcon 
-                      v-else 
-                      class="w-7 h-7 text-gray-500" 
-                    />
+                  <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
+                    <img :src="getImageUrl(actor.profile_path, 'w185')" :alt="actor.name" class="w-full h-full object-cover" />
                   </div>
                   <div class="flex-1">
                     <span class="text-gray-300 text-sm font-medium leading-snug break-words">{{ actor.name }}</span>
@@ -1056,7 +1075,7 @@ onUnmounted(() => {
                 </template>
               </div>
             </div>
-            <div v-else class="bg-white/20  border border-white/30 rounded-xl p-4 flex justify-center items-center" style="box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);">
+            <div v-else class="bg-white/20 backdrop-blur-md border border-white/30 rounded-xl p-4 flex justify-center items-center" style="box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);">
               <p>No company logo available</p>
             </div>
           </div>
@@ -1082,7 +1101,7 @@ onUnmounted(() => {
                     
                     <button @click.stop="handleWatchlistToggle(sim)" class="ml-2 border border-white/30 rounded-full p-1 hover:bg-white/10 transition">
                       <Check v-if="watchlist.has(sim.id)" class="w-3 h-3 text-green-400" />
-                      <Bookmark v-else class="w-3 h-3 text-white" />
+                      <Plus v-else class="w-3 h-3 text-white" />
                     </button>
                   </div>
                   <div class="text-[10px] text-gray-400 font-bold mt-1">
@@ -1103,40 +1122,38 @@ onUnmounted(() => {
       <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
        <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-10 pointer-events-none">
 
-          <!-- 🔴 CLOSE BUTTON (kiri) -->
-          <div class="pointer-events-auto group flex justify-start items-start">
-            <button 
-              @click="closePlayer" 
-              class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full transition-all duration-300 text-white shadow-xl cursor-pointer"
-            >
-              <X class="w-10 h-10" />
-            </button>
-          </div>
+         <div class="pointer-events-auto group flex justify-start items-start">
+           <button 
+             @click="closePlayer" 
+             class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full transition-all duration-300 text-white shadow-xl cursor-pointer"
+           >
+             <X class="w-10 h-10" />
+           </button>
+         </div>
 
-          <!-- 🟢 LOGO / TITLE (kanan) -->
-          <div class="flex justify-end text-right">
-            <img 
-              v-if="currentMedia?.logo_path" 
-              :src="getImageUrl(currentMedia.logo_path, 'w300')" 
-              class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg" 
-              :alt="currentMedia?.title || currentMedia?.name" 
-            />
-            <h2 
-              v-else 
-              class="text-xl md:text-2xl font-black uppercase tracking-tighter drop-shadow-md text-white"
-            >
-              {{ currentMedia?.title || currentMedia?.name }}
-            </h2>
-          </div>
+         <div class="flex justify-end text-right">
+           <img 
+             v-if="currentMedia?.logo_path" 
+             :src="getImageUrl(currentMedia.logo_path, 'w300')" 
+             class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg" 
+             :alt="currentMedia?.title || currentMedia?.name" 
+           />
+           <h2 
+             v-else 
+             class="text-xl md:text-2xl font-black uppercase tracking-tighter drop-shadow-md text-white"
+           >
+             {{ currentMedia?.title || currentMedia?.name }}
+           </h2>
+         </div>
 
-        </div>
-        <div v-if="embedUrl" class="w-full h-full">
-            <iframe :src="embedUrl" width="100%" height="100%" frameborder="0" allowfullscreen class="w-full h-full"></iframe>
-        </div>
+       </div>
+       <div v-if="embedUrl" class="w-full h-full">
+           <iframe :src="embedUrl" width="100%" height="100%" frameborder="0" allowfullscreen class="w-full h-full"></iframe>
+       </div>
       </div>
     </Transition>
 
-   <Transition name="vision-pro">
+    <Transition name="vision-pro">
       <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[50] flex items-center justify-center p-4 md:p-10 backdrop-blur-md  transition-all duration-500" @click.self="toggleWatchlist">
         
         <div class="absolute inset-0 overflow-hidden pointer-events-none">
@@ -1290,25 +1307,21 @@ onUnmounted(() => {
       <div 
         data-lenis-prevent
         v-if="isSearchOpen"
-        class="fixed inset-0 z-[100]  flex justify-center items-start pt-[12vh]"
+        class="fixed inset-0 z-[100] bg-black/70 flex justify-center items-start pt-[12vh]"
         @click.self="toggleSearch"
       >
 
-        <!-- MAIN WRAPPER -->
         <div class="relative w-full max-w-4xl mx-4 flex gap-4">
 
-          <!-- 🔍 SEARCH BOX -->
           <div class="flex-1 relative overflow-hidden rounded-3xl border border-white/10 
           bg-gradient-to-br from-white/10 via-white/5 to-transparent
           backdrop-blur-2xl shadow-[0_25px_80px_-20px_rgba(0,0,0,1)]">
 
-            <!-- ✨ Liquid highlight -->
             <div class="pointer-events-none absolute inset-0">
               <div class="absolute -top-20 -left-20 w-60 h-60 bg-white/10 rounded-full blur-3xl opacity-40"></div>
               <div class="absolute bottom-0 right-0 w-40 h-40 bg-blue-500/10 rounded-full blur-2xl opacity-30"></div>
             </div>
 
-            <!-- HEADER -->
             <div class="flex items-center px-6 py-5 border-b border-white/10 bg-white/5">
               <Search class="w-6 h-6 text-gray-400 mr-4" />
 
@@ -1335,16 +1348,13 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- RESULTS -->
-            <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2">
+            <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2" @scroll="handleSearchScroll">
 
-              <!-- LOADING -->
               <div v-if="isSearching" class="p-10 flex flex-col items-center gap-3">
                 <Loader2 class="w-8 h-8 animate-spin text-blue-500" />
                 <span class="text-sm text-gray-400 animate-pulse">Searching...</span>
               </div>
 
-              <!-- EMPTY -->
               <div v-else-if="filteredResults.length === 0" class="p-10 text-center">
                 <Search class="w-12 h-12 text-gray-600 mb-3 mx-auto" />
                 <p class="text-gray-400">
@@ -1352,7 +1362,6 @@ onUnmounted(() => {
                 </p>
               </div>
 
-              <!-- LIST -->
               <div v-else class="space-y-2 p-1">
                 <div 
                   v-for="item in filteredResults"
@@ -1364,7 +1373,6 @@ onUnmounted(() => {
                   transition-all duration-300 group"
                 >
 
-                  <!-- POSTER -->
                   <div class="w-14 h-20 bg-white/5 rounded-md overflow-hidden flex-shrink-0">
                     <img 
                       :src="getImageUrl(item.poster_path || item.backdrop_path, 'w185')" 
@@ -1372,10 +1380,8 @@ onUnmounted(() => {
                     />
                   </div>
 
-                  <!-- INFO -->
                   <div class="flex-1 min-w-0">
 
-                    <!-- 🔥 PRIORITAS LOGO -->
                     <img 
                       v-if="item.logo_path"
                       :src="getImageUrl(item.logo_path, 'w300')"
@@ -1386,7 +1392,6 @@ onUnmounted(() => {
                       {{ item.title || item.name }}
                     </h4>
 
-                    <!-- META -->
                     <div class="flex items-center gap-3 text-xs text-gray-400 mt-2">
 
                       <span class="bg-white/10 px-2 py-0.5 rounded text-white">
@@ -1403,10 +1408,8 @@ onUnmounted(() => {
                     </div>
                   </div>
 
-                  <!-- ACTIONS (KANAN) -->
                   <div class="flex items-center gap-2">
 
-                    <!-- INFO -->
                     <button 
                       @click.stop="openInfo(item)"
                       class="w-10 h-10 rounded-full flex items-center justify-center 
@@ -1415,7 +1418,6 @@ onUnmounted(() => {
                       <Info class="w-4 h-4 text-white" />
                     </button>
 
-                    <!-- BOOKMARK -->
                     <button 
                       @click.stop="handleWatchlistToggle(item, item.media_type)"
                       class="w-10 h-10 rounded-full flex items-center justify-center 
@@ -1431,7 +1433,6 @@ onUnmounted(() => {
                       />
                     </button>
 
-                    <!-- PLAY -->
                     <div class="w-10 h-10 rounded-full flex items-center justify-center 
                     group-hover:bg-white/10 transition">
                       <Play class="w-5 h-5 text-gray-400 group-hover:text-white" />
@@ -1439,19 +1440,31 @@ onUnmounted(() => {
 
                   </div>
                 </div>
+                
+                <div v-if="isSearchingMore" class="p-4 flex justify-center">
+                  <Loader2 class="w-6 h-6 animate-spin text-blue-500" />
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 🎛 FILTER SIDEBAR -->
           <div class="w-[220px] hidden md:flex flex-col gap-4 
           rounded-3xl border border-white/10 
           bg-gradient-to-br from-white/10 via-white/5 to-transparent
           backdrop-blur-2xl p-4">
 
             <h3 class="text-white text-sm font-semibold opacity-80">Filter</h3>
+            
+            <div>
+              <p class="text-xs text-gray-400 mb-2">Type</p>
+              <select v-model="selectedType"
+                class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
+                <option value="">All</option>
+                <option value="movie">Movies</option>
+                <option value="tv">TV Series</option>
+              </select>
+            </div>
 
-            <!-- YEAR -->
             <div>
               <p class="text-xs text-gray-400 mb-2">Year</p>
               <select v-model="selectedYear"
@@ -1463,7 +1476,6 @@ onUnmounted(() => {
               </select>
             </div>
 
-            <!-- GENRE -->
             <div>
               <p class="text-xs text-gray-400 mb-2">Genre</p>
               <select v-model="selectedGenre"
@@ -1500,7 +1512,7 @@ onUnmounted(() => {
             <div>
               <div class="flex items-center justify-between mb-2">
                 <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider">Password</label>
-                
+                <a href="#" class="text-xs text-blue-500 hover:text-blue-400 font-medium">Forgot?</a>
               </div>
               <input v-model="loginData.password" type="password" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" placeholder="••••••••" required />
             </div>
@@ -1521,7 +1533,6 @@ onUnmounted(() => {
         @click.self="isProfileOpen = false"
       >
 
-        <!-- 🧊 OUTER GLASS (PARALLAX) -->
         <div 
           class="absolute top-[80px] right-6 lg:right-12 w-64 p-[1px] rounded-2xl 
                 bg-gradient-to-br from-white/20 via-white/5 to-white/10 
@@ -1531,10 +1542,8 @@ onUnmounted(() => {
           :style="glassTransform"
         >
 
-          <!-- 🧊 INNER GLASS -->
           <div class="rounded-2xl bg-white/5 backdrop-blur-2xl border border-white/10 p-2 relative overflow-hidden">
 
-            <!-- ✨ LIGHT REFLECTION (overlay doang) -->
             <div 
               class="absolute inset-0 rounded-2xl pointer-events-none"
               :style="{
@@ -1542,7 +1551,6 @@ onUnmounted(() => {
               }"
             ></div>
 
-            <!-- 👤 USER INFO -->
             <div class="flex items-center gap-3 p-3 mb-2 border-b border-white/10 relative z-10">
               
               <div class="relative w-10 h-10">
@@ -1562,7 +1570,6 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- 🔘 MENU -->
             <div class="space-y-1 relative z-10">
 
              <button
@@ -1601,33 +1608,32 @@ onUnmounted(() => {
       :class="[
         'fixed top-0 w-full z-40 flex items-center justify-between transition-all duration-700 px-6 lg:px-12',
         isScrolled 
-          ? 'py-3 border-b border-white/10 bg-white/5 backdrop-blur-sm shadow-[0_8px_32px_rgba(0,0,0,0.3)]' 
+          ? 'py-3 border-b border-white/10 bg-white/5 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)]' 
           : 'bg-transparent py-8'
       ]"
     >
 
-      <!-- 🔤 LOGO -->
       <h1 
         @click="changeView('home')" 
         class="font-black tracking-tighter flex items-center cursor-pointer transition-all duration-500"
         :class="isScrolled ? 'text-2xl' : 'text-4xl'"
       >
         <span class="text-white">V</span>
-       <span class="overflow-hidden transition-all duration-500 bg-clip-text text-transparent bg-[linear-gradient(110deg,#ffffff,45%,#60a5fa,55%,#ffffff)] bg-[length:250%_auto] " :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'">
+        <span 
+          class="overflow-hidden transition-all duration-500" 
+          :class="isScrolled ? 'max-w-0 opacity-0' : 'max-w-[120px] opacity-100'"
+        >
           IORA
         </span>
         <span class="text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]">.</span>
       </h1>
 
-      <!-- 👤 USER ICON -->
       <div 
         @click="handleUserIconClick" 
         class="relative w-10 h-10 rounded-full cursor-pointer transition-all duration-300 hover:scale-110"
       >
-        <!-- Outer glow -->
         <div class="absolute inset-0 rounded-full bg-gradient-to-tr from-blue-500/60 to-blue-400/60 blur-md opacity-70"></div>
         
-        <!-- Glass layer -->
         <div class="relative w-full h-full rounded-full bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2)]">
           <span v-if="isLoggedIn" class="font-bold text-sm text-white">
             {{ currentUser.username.charAt(0).toUpperCase() }}
@@ -1657,7 +1663,7 @@ onUnmounted(() => {
             <div class="absolute bottom-[15%] left-6 lg:left-12 max-w-2xl space-y-8 z-10">
               <div class="space-y-6">
                 <div class="flex items-center gap-3">
-                   <div v-if="movie.vote_average" class="flex items-center bg-[#f5c518] text-black px-2 py-0.5 rounded font-black text-[10px]">IMDb {{ movie.vote_average.toFixed(1) }}</div>
+                   <div class="flex items-center bg-[#f5c518] text-black px-2 py-0.5 rounded font-black text-[10px]">IMDb {{ movie.vote_average.toFixed(1) }}</div>
                    <span class="text-blue-500 font-bold text-[12px] uppercase tracking-[0.3em]">Viora Originals</span>
                 </div>
 
@@ -1682,7 +1688,7 @@ onUnmounted(() => {
 
                 <Button @click="handleWatchlistToggle(movie)" variant="outline" class="bg-black/40 backdrop-blur-md border-white/20 hover:bg-white/10 h-12 px-8 rounded-xl font-bold transition-colors">
                   <Check v-if="watchlist.has(movie?.id)" class="w-5 h-5 mr-2 text-green-400" />
-                  <Bookmark v-else class="w-5 h-5 " />
+                  <Plus v-else class="w-5 h-5 " />
                   <span class="hidden sm:inline">My List</span>
                 </Button>
               </div>
@@ -1690,13 +1696,13 @@ onUnmounted(() => {
           </div>
         </transition-group>
       </section>
-      
+
       <main class="relative z-20 -mt-20 space-y-10 pb-20">
        <section v-if="isLoggedIn && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4   hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
+          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
             <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
               <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
               <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
@@ -1705,7 +1711,7 @@ onUnmounted(() => {
                   <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
                 <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class=" px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-white/20  border border-white/20 shadow-md">
+                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-white/20  border border-white/20 shadow-md">
                   <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
                  </div> 
                 </div>
@@ -1714,13 +1720,13 @@ onUnmounted(() => {
                 <div class="h-full bg-blue-500" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
               </div>
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <div class="w-14 h-14 bg-white/10 rounded-full  flex items-center justify-center border border-white/30">
+                <div class="w-14 h-14 bg-white/10 rounded-full backdrop-blur-sm flex items-center justify-center border border-white/30">
                   <Play class="w-6 h-6 text-white fill-current" />
                 </div>
               </div>
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
                 <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-4 h-4 text-white" /></button>
-                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Bookmark v-else class="w-4 h-4 text-white" /></button>
+                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Plus v-else class="w-4 h-4 text-white" /></button>
                 <button @click.stop="handleRemoveHistory(movie)" class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20 transition-colors"><X class="w-4 h-4 text-white" /></button>
               </div>
             </div>
@@ -1758,7 +1764,7 @@ onUnmounted(() => {
                   <h4 v-else :class="category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1'" class="font-black uppercase tracking-tighter drop-shadow-md">{{ movie.title || movie.name }}</h4>
                 </div>
                <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class=" px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-white/20 border border-white/20 shadow-md">
+                  <div class="backdrop-blur-sm px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-white/20 border border-white/20 shadow-md">
                     <span class="text-[11px] md:text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
                   </div> 
                 </div>
@@ -1767,12 +1773,12 @@ onUnmounted(() => {
               <div class="absolute inset-0 rounded-2xl pointer-events-none bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
               
               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                 <div class="w-12 h-12 md:w-14 md:h-14 bg-white/10 rounded-full flex  items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" /></div>
+                 <div class="w-12 h-12 md:w-14 md:h-14 bg-white/10  rounded-full flex backdrop-blur-sm items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" /></div>
               </div>
               
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
                 <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
-                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-3 h-3 md:w-4 md:h-4 text-green-400" /><Bookmark v-else class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
+                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-3 h-3 md:w-4 md:h-4 text-green-400" /><Plus v-else class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
               </div>
             </div>
           </div>
@@ -1897,14 +1903,12 @@ onUnmounted(() => {
                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end items-center">
                   <div class="mb-2">
                     
-                    <!-- kalau ada logo, selalu tampil -->
                     <img 
                       v-if="movie.logo_path" 
                       :src="getImageUrl(movie.logo_path, 'w300')" 
                       class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" 
                     />
 
-                    <!-- fallback ke teks -->
                     <h4 
                       v-else 
                       class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center"
@@ -1924,7 +1928,7 @@ onUnmounted(() => {
                 </div>
 
                 <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                   <div class=" w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
+                   <div class="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
                       <Play class="w-5 h-5 text-white fill-current" />
                    </div>
                 </div>
@@ -1969,7 +1973,7 @@ onUnmounted(() => {
           class="relative z-10 p-3 rounded-full cursor-pointer group transition-all"
         >
           
-          <Home 
+         <Home 
             v-if="item.key === 'home'" 
             class="w-6 h-6 transition-transform duration-200 ease-out"
             :style="activeMagnetIndex === index ? { transform: `translate(${magneticOffsets[index]?.x || 0}px, ${magneticOffsets[index]?.y || 0}px) scale(1.05)` } : {}"
