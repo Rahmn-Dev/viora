@@ -46,11 +46,24 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://192.168.101.41:5173",
+    "http://localhost:1234",
 ]
+
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://192.168.101.41:5173",
+    "http://localhost:1234",
+]
+
+# Penting: izinkan cookies dikirim bersama request cross-origin
+CORS_ALLOW_CREDENTIALS = True
+
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware', # Taruh di paling atas!
     'django.middleware.security.SecurityMiddleware',
+    'core.middleware.SecurityHeadersMiddleware',  # Blokir popup/tracker dari player embed
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -128,17 +141,17 @@ STATIC_URL = 'static/'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    )
+        'core.authentication.CsrfExemptSessionAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+    ),
 }
-from datetime import timedelta
 
-
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),  # default 5 menit, bisa diubah
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),  # default 1 hari, bisa diubah
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
-}
+# Session config
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 hari
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_HTTPONLY = True
+# Di production set True, di dev biarkan False karena pakai http
+SESSION_COOKIE_SECURE = False

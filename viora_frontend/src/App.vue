@@ -1,42 +1,29 @@
 <script setup>
-axios.defaults.baseURL = 'http://localhost:1234';
 
-axios.interceptors.response.use(
+import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, Menu, Maximize, Minimize } from 'lucide-vue-next';
+import axios from 'axios';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import Lenis from 'lenis';
+
+// Instance khusus untuk request ke backend Django kita (pakai session cookie)
+const api = axios.create({
+  baseURL: 'http://localhost:1234',
+  withCredentials: true,  // kirim session cookie di setiap request ke backend
+});
+
+// Jika session kedaluwarsa (401), logout otomatis
+api.interceptors.response.use(
   res => res,
-  async (err) => {
-    const status = err.response?.status;
-    const isRefreshEndpoint = err.config?.url?.includes('/api/token/refresh/');
-
-    // Never retry the refresh endpoint itself — that causes an infinite loop
-    if (status === 401 && !err.config._retry && !isRefreshEndpoint) {
-      err.config._retry = true;
-      const refresh = localStorage.getItem('refresh_token');
-      if (!refresh) {
-        handleLogout();
-        return Promise.reject(err);
-      }
-      try {
-        const res = await axios.post('/api/token/refresh/', { refresh: refresh });
-        const newAccess = res.data.access;
-        localStorage.setItem('access_token', newAccess);
-        axios.defaults.headers.common['Authorization'] = `Bearer ${newAccess}`;
-        err.config.headers['Authorization'] = `Bearer ${newAccess}`;
-        return axios(err.config);
-      } catch (e) {
-        handleLogout();
-        return Promise.reject(e);
-      }
+  (err) => {
+    if (err.response?.status === 401 && !err.config?.url?.includes('/api/me/')) {
+      handleLogout();
     }
     return Promise.reject(err);
   }
 );
 
-import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers } from 'lucide-vue-next';
-import axios from 'axios';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import Lenis from 'lenis';
 
 let lenis;
 
@@ -230,6 +217,65 @@ const isPlayerOpen = ref(false);
 const currentMedia = ref(null); 
 const embedUrl = ref('');
 
+const currentPlayState = ref(null);
+const isSettingsOpen = ref(false);
+
+const isEpisodesSidebarOpen = ref(false);
+const currentSeasonEpisodes = ref([]);
+const tvSeasons = ref([]);
+const isFetchingEpisodes = ref(false);
+const isSeasonDropdownOpen = ref(false);
+
+const selectSeason = async (seasonNumber) => {
+  isSeasonDropdownOpen.value = false;
+  if (currentPlayState.value.season === seasonNumber) return;
+  currentPlayState.value.season = seasonNumber;
+  currentPlayState.value.episode = 1;
+  currentPlayState.value.startTime = 0;
+  embedUrl.value = buildEmbedUrl(currentPlayState.value);
+  await fetchEpisodes(currentPlayState.value.tmdbId, seasonNumber);
+};
+
+const isPlayerControlsVisible = ref(true);
+const isPlayerPaused = ref(false);
+let playerControlsTimer = null;
+
+const resetPlayerControlsTimer = () => {
+  isPlayerControlsVisible.value = true;
+  if (playerControlsTimer) clearTimeout(playerControlsTimer);
+  playerControlsTimer = setTimeout(() => {
+    if (!isEpisodesSidebarOpen.value && !isPlayerPaused.value) {
+      isPlayerControlsVisible.value = false;
+    }
+  }, 3000);
+};
+
+const playerContainerRef = ref(null);
+const isFullscreen = ref(false);
+
+const toggleFullscreen = () => {
+  if (!playerContainerRef.value) return;
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+    if (playerContainerRef.value.requestFullscreen) {
+      playerContainerRef.value.requestFullscreen();
+    } else if (playerContainerRef.value.webkitRequestFullscreen) {
+      playerContainerRef.value.webkitRequestFullscreen();
+    }
+    isFullscreen.value = true;
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    }
+    isFullscreen.value = false;
+  }
+};
+
+const handleFullscreenChange = () => {
+  isFullscreen.value = !!(document.fullscreenElement || document.webkitFullscreenElement);
+};
+
 const watchHistoryMovies = ref([]); 
 const watchlistMovies = ref([]); 
 const isWatchlistOpen = ref(false); 
@@ -352,7 +398,7 @@ const enrichMoviesWithLogos = async (movies) => {
 const fetchUserData = async () => {
   if (!isLoggedIn.value) return;
   try {
-    const historyRes = await axios.get('/api/watch-history/');
+    const historyRes = await api.get('/api/watch-history/');
     const historyData = historyRes.data;
     if (historyData.length > 0) {
       const historyDetails = await Promise.all(
@@ -370,7 +416,7 @@ const fetchUserData = async () => {
 
 const handleRemoveHistory = async (movie) => {
   try {
-    await axios.delete('/api/watch-history/', { data: { tmdb_id: movie.id, media_type: movie.media_type }});
+    await api.delete('/api/watch-history/', { data: { tmdb_id: movie.id, media_type: movie.media_type }});
     watchHistoryMovies.value = watchHistoryMovies.value.filter(m => m.id !== movie.id);
   } catch (err) { console.error("❌ Failed remove history", err); }
 };
@@ -666,7 +712,7 @@ const handleWatchlistToggle = async (movie, type = null) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const mediaType = type || movie.media_type || 'movie';
   try {
-    const res = await axios.post('/api/watchlist/toggle/', {
+    const res = await api.post('/api/watchlist/toggle/', {
       tmdb_id: movie.id, media_type: mediaType, title: movie.title || movie.name,
       poster_path: movie.poster_path, backdrop_path: movie.backdrop_path,
       rating: movie.vote_average, year: (movie.release_date || movie.first_air_date)?.substring(0, 4)
@@ -745,7 +791,7 @@ const onSearchInput = () => {
 const fetchWatchlist = async () => {
   if (!isLoggedIn.value) return; // Don't call auth-protected API when not logged in
   try {
-    const res = await axios.get('/api/watchlist/');
+    const res = await api.get('/api/watchlist/');
     watchlist.value = new Set(res.data.map(item => item.id || item.tmdb_id));
     watchlistMovies.value = await enrichMoviesWithLogos(res.data);
   } catch (err) { console.error("gagal ambil watchlist", err); }
@@ -756,27 +802,26 @@ const handleLogin = async () => {
   isLoggingIn.value = true;
   loginError.value = '';
   try {
-    const response = await axios.post('/api/login/', { username: loginData.value.username, password: loginData.value.password });
-    const accessToken = response.data.access;
-    const refreshToken = response.data.refresh;
-    localStorage.setItem('access_token', accessToken);
-    localStorage.setItem('refresh_token', refreshToken);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+    const response = await api.post('/api/login/', {
+      username: loginData.value.username,
+      password: loginData.value.password
+    });
     isLoggedIn.value = true;
-    currentUser.value = { username: loginData.value.username };
-    localStorage.setItem('viora_auth_status', 'true');
-    localStorage.setItem('viora_auth_user', loginData.value.username);
+    currentUser.value = { username: response.data.username, email: response.data.email };
+    localStorage.setItem('viora_auth_user', response.data.username);
     await fetchUserData();
     await fetchWatchlist();
     isLoginOpen.value = false;
     loginData.value = { username: '', password: '' };
   } catch (error) {
     console.error(error);
-    loginError.value = error.response?.data?.detail || 'Login failed.';
+    loginError.value = error.response?.data?.detail || 'Login gagal. Cek username dan password.';
   } finally { isLoggingIn.value = false; }
 };
 
-const handleLogout = () => {
+
+const handleLogout = async () => {
+  try { await api.post('/api/logout/'); } catch (e) {}
   isLoggedIn.value = false;
   currentUser.value = { username: '' };
   isProfileOpen.value = false;
@@ -784,26 +829,89 @@ const handleLogout = () => {
   watchHistoryMovies.value = [];
   watchlistMovies.value = [];
   watchlist.value.clear();
-  localStorage.removeItem('viora_auth_status');
   localStorage.removeItem('viora_auth_user');
-  localStorage.removeItem('access_token');
-  localStorage.removeItem('refresh_token'); // Clear refresh token so stale tokens don't cause 401 loops on next load
-  delete axios.defaults.headers.common['Authorization'];
 };
 
-const checkLoginStatus = () => {
-  const token = localStorage.getItem('access_token');
-  const user = localStorage.getItem('viora_auth_user');
-  if (token && user) {
+
+const checkLoginStatus = async () => {
+  // Cek session aktif via /api/me/ — lebih reliable daripada cek localStorage
+  try {
+    const res = await api.get('/api/me/');
     isLoggedIn.value = true;
-    currentUser.value = { username: user };
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    currentUser.value = { username: res.data.username, email: res.data.email };
+    localStorage.setItem('viora_auth_user', res.data.username);
     fetchUserData();
-    fetchWatchlist(); 
+    fetchWatchlist();
+  } catch (e) {
+    // Tidak ada session aktif
+    isLoggedIn.value = false;
+    currentUser.value = { username: '' };
+    localStorage.removeItem('viora_auth_user');
   }
 };
 
-const openPlayer = (movie) => {
+
+const buildEmbedUrl = (playState) => {
+  if (!playState) return '';
+  const { tmdbId, type, season, episode, startTime } = playState;
+  const progressParam = startTime ? `&progress=${startTime}` : '';
+  if (type === 'movie') {
+    return `https://player.videasy.net/movie/${tmdbId}?overlay=false&color=3B82F6${progressParam}`;
+  } else {
+    return `https://player.videasy.net/tv/${tmdbId}/${season}/${episode}?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=false&overlay=false&color=3B82F6${progressParam}`;
+  }
+};
+
+let deleteBtnInterval = null;
+watch(isPlayerOpen, (isOpen) => {
+  if (isOpen) {
+    deleteBtnInterval = setInterval(() => {
+      const btn = document.getElementById('ButtonFullscreen');
+      if (btn) btn.remove();
+    }, 300);
+  } else {
+    if (deleteBtnInterval) clearInterval(deleteBtnInterval);
+  }
+});
+
+const fetchEpisodes = async (tmdbId, seasonNumber) => {
+  isFetchingEpisodes.value = true;
+  try {
+    const res = await axios.get(`${BASE_URL}/tv/${tmdbId}/season/${seasonNumber}?api_key=${API_KEY}`);
+    currentSeasonEpisodes.value = res.data.episodes || [];
+  } catch(e) {
+    console.error("Failed to fetch episodes", e);
+  } finally {
+    isFetchingEpisodes.value = false;
+  }
+};
+
+const changeEpisode = async (seasonNumber, episodeNumber) => {
+  const isNewSeason = currentPlayState.value.season !== seasonNumber;
+  
+  currentPlayState.value.season = seasonNumber;
+  currentPlayState.value.episode = episodeNumber;
+  currentPlayState.value.startTime = 0;
+  
+  const history = watchHistoryMovies.value.find(m => m.id === currentPlayState.value.tmdbId);
+  if (history && history.season === seasonNumber && history.episode === episodeNumber) {
+     currentPlayState.value.startTime = Math.floor(history.current_time_seconds || history.progress_percentage || 0);
+  }
+
+  embedUrl.value = buildEmbedUrl(currentPlayState.value);
+  isEpisodesSidebarOpen.value = false;
+
+  if (isNewSeason) {
+    await fetchEpisodes(currentPlayState.value.tmdbId, seasonNumber);
+  }
+};
+
+const handleSeasonChange = async (event) => {
+  const newSeason = parseInt(event.target.value);
+  await fetchEpisodes(currentPlayState.value.tmdbId, newSeason);
+};
+
+const openPlayer = async (movie) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
   currentMedia.value = movie;
@@ -826,46 +934,124 @@ const openPlayer = (movie) => {
   targetSeason = targetSeason || 1;
   targetEpisode = targetEpisode || 1;
 
-  if (type === 'movie') {
-    embedUrl.value = `https://www.vidking.net/embed/movie/${tmdbId}?autoPlay=true&t=${startTime}&lan=id,en&key=${WYZIE_API_KEY}`;
-  } else {
-    embedUrl.value = `https://www.vidking.net/embed/tv/${tmdbId}/${targetSeason}/${targetEpisode}?autoPlay=true&t=${startTime}&nextEpisode=true&episodeSelector=true&lan=id,en&key=${WYZIE_API_KEY}`;
-  }
+  currentPlayState.value = {
+    tmdbId,
+    type,
+    season: targetSeason,
+    episode: targetEpisode,
+    startTime
+  };
+
+  embedUrl.value = buildEmbedUrl(currentPlayState.value);
 
   isPlayerOpen.value = true;
   if(heroTimer) clearInterval(heroTimer); 
   if(isInfoOpen.value) closeInfo(); 
+
+  if (type === 'tv') {
+    isEpisodesSidebarOpen.value = false;
+    if (movie.seasons) {
+      tvSeasons.value = movie.seasons;
+    } else {
+      try {
+        const res = await axios.get(`${BASE_URL}/tv/${tmdbId}?api_key=${API_KEY}`);
+        tvSeasons.value = res.data.seasons || [];
+      } catch(e) {}
+    }
+    await fetchEpisodes(tmdbId, targetSeason);
+  } else {
+    isEpisodesSidebarOpen.value = false;
+    currentSeasonEpisodes.value = [];
+    tvSeasons.value = [];
+  }
+  isPlayerPaused.value = false;
+  resetPlayerControlsTimer();
 };
 
 const closePlayer = () => {
   embedUrl.value = '';
+  isEpisodesSidebarOpen.value = false;
+  isPlayerPaused.value = false;
+  if (playerControlsTimer) clearTimeout(playerControlsTimer);
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }
   setTimeout(() => {
     isPlayerOpen.value = false;
     currentMedia.value = null;
+    currentPlayState.value = null;
     startHeroCarousel(); 
     fetchUserData();
   }, 100); 
 };
 
 let lastSaveTime = 0;
+const saveWatchProgress = async (playerEvent, id, mediaType, season, episode, progress, currentTime, duration) => {
+  if (!isLoggedIn.value || !id) return;
+  const now = Date.now();
+  const normalizedEvent = String(playerEvent || '').toLowerCase();
+  const isEnded = normalizedEvent === 'ended' || normalizedEvent.includes('end');
+  const isPause = normalizedEvent === 'pause' || normalizedEvent.includes('pause');
+
+  if (isPause) {
+    isPlayerPaused.value = true;
+  } else if (normalizedEvent.includes('play') || normalizedEvent.includes('timeupdate') || normalizedEvent.includes('progress')) {
+    isPlayerPaused.value = false;
+  }
+  
+  if (isEnded || isPause || now - lastSaveTime > 3000) {
+    lastSaveTime = now; 
+    try {
+      await api.post('/api/watch-history/', {
+        tmdb_id: Number(id),
+        media_type: mediaType || 'movie',
+        season: season ? Number(season) : null,
+        episode: episode ? Number(episode) : null,
+        progress_percentage: Math.min(100, Math.max(0, Math.round(progress || 0))),
+        current_time_seconds: Math.floor(currentTime || 0),
+        total_duration: Math.floor(duration || 0),
+        is_finished: isEnded
+      });
+    } catch (e) {
+      console.error('Failed to save watch progress:', e);
+    }
+  }
+};
+
 const handlePlayerMessage = async (event) => {
   try {
-    const message = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-    if (message && message.type === 'PLAYER_EVENT') {
-       const { event: playerEvent, progress, currentTime, duration, id, mediaType, season, episode } = message.data;
-       if (!isLoggedIn.value) return;
-       const now = Date.now();
-       if (playerEvent === 'pause' || playerEvent === 'ended' || (playerEvent === 'timeupdate' && now - lastSaveTime > 3000)) {
-         lastSaveTime = now; 
-         try {
-           await axios.post('/api/watch-history/', {
-              tmdb_id: id, media_type: mediaType, season: season || null, episode: episode || null,
-              progress_percentage: progress, current_time_seconds: currentTime, total_duration: duration,
-              is_finished: playerEvent === 'ended'
-            });
-         } catch (e) { console.error('Failed to save progress', e); }
-       }
+    let message = event.data;
+    if (typeof message === 'string') {
+      try {
+        message = JSON.parse(message);
+      } catch (e) {
+        return;
+      }
     }
+
+    if (!message || typeof message !== 'object') return;
+
+
+
+    // Format 2: Videasy & Standard postMessage players ({ event / type / playerState, currentTime, duration, progress, id, ... })
+    const playerEvent = message.event || message.type || message.action || message.playerEvent || message.status;
+    if (!playerEvent) return;
+
+    const currentTime = message.currentTime ?? message.current_time ?? message.time ?? 0;
+    const duration = message.duration ?? message.totalDuration ?? message.total_duration ?? 0;
+    let progress = message.progress ?? message.percentage ?? message.progress_percentage;
+
+    if ((progress === undefined || progress === null) && duration > 0) {
+      progress = (currentTime / duration) * 100;
+    }
+
+    const id = message.id || message.tmdb_id || message.tmdbId || message.data?.id || currentPlayState.value?.tmdbId;
+    const mediaType = message.mediaType || message.media_type || message.data?.mediaType || currentPlayState.value?.type;
+    const season = message.season ?? message.data?.season ?? currentPlayState.value?.season;
+    const episode = message.episode ?? message.data?.episode ?? currentPlayState.value?.episode;
+
+    await saveWatchProgress(playerEvent, id, mediaType, season, episode, progress, currentTime, duration);
   } catch (e) {}
 };
 
@@ -936,6 +1122,35 @@ watch(hoverIndex, () => {
   }
 })
 let lenisRafId;
+// Daftar domain iklan/tracker yang sering dibuka oleh embed player pihak ketiga
+const AD_TRACKER_DOMAINS = [
+  'doubleclick', 'googlesyndication', 'adnxs', 'adsrvr', 'rubiconproject',
+  'openx', 'smartadserver', 'pubmatic', 'criteo', 'taboola', 'outbrain',
+  'revcontent', 'bidswitch', 'quantserve', 'scorecardresearch', 'moatads',
+  'amazon-adsystem', 'ib.adnxs', 'pagead', 'adservice', 'clicks.trafficjunky',
+  'popads', 'popcash', 'plugrush', 'exoclick', 'trafficfactory', 'ero-advertising',
+  'juicyads', 'adsterraserving', 'datahc.com', 'tpc.googlesyndication', 'google-analytics.com'
+];
+
+const blockAdsAndTrackers = () => {
+  const _originalOpen = window.open;
+  window.open = function(url, name, specs) {
+    if (!url) return null;
+    try {
+      const href = String(url).toLowerCase();
+      // Blokir URL yang mengandung domain tracker/ads
+      const isAd = AD_TRACKER_DOMAINS.some(d => href.includes(d));
+      // Blokir juga popup yang tidak punya URL jelas (javascript:, about:blank tricks)
+      const isSuspicious = href.startsWith('javascript:') || href === 'about:blank' || href === '';
+      if (isAd || isSuspicious) {
+        console.info('[Viora] Blocked popup/tracker:', url);
+        return null;
+      }
+    } catch (e) {}
+    return _originalOpen.call(window, url, name, specs);
+  };
+};
+
 onMounted(() => {
   if (typeof window !== 'undefined') {
     lenis = new Lenis({
@@ -955,6 +1170,7 @@ onMounted(() => {
     window.addEventListener('mousemove', handleMouseMove)
   }
   
+  blockAdsAndTrackers();
   checkLoginStatus();
   fetchAllData();
   startHeroCardAutoScroll();
@@ -1152,36 +1368,167 @@ onUnmounted(() => {
     </Transition>
 
     <Transition name="fade">
-      <div v-if="isPlayerOpen" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
-       <div class="absolute top-0 left-0 w-full p-6 flex justify-between items-start z-10 pointer-events-none">
+      <div v-if="isPlayerOpen" ref="playerContainerRef" @mousemove="resetPlayerControlsTimer" class="fixed inset-0 z-[200] bg-black flex flex-col items-center justify-center">
+        <!-- Top Hover Trigger Zone: Invisible overlay over iframe top area (limited to left side to avoid blocking sidebar) -->
+        <div 
+          @mousemove="resetPlayerControlsTimer"
+          @mouseenter="resetPlayerControlsTimer"
+          class="!fixed top-0 left-0 right-0 sm:right-[420px] h-28 z-[390] pointer-events-auto"
+        ></div>
 
-         <div class="pointer-events-auto group flex justify-start items-start">
-           <button 
-             @click="closePlayer" 
-             class="opacity-0 group-hover:opacity-100 p-2 bg-white/10 hover:bg-red-600 rounded-full transition-all duration-300 text-white shadow-xl cursor-pointer"
+        <!-- Top Controls: Close Player, Episodes Toggle, Fullscreen Toggle -->
+        <div 
+          @mouseenter="resetPlayerControlsTimer"
+          class="!fixed top-4 left-4 md:top-6 md:left-6 z-[400] flex items-center gap-3 transition-opacity duration-500"
+          :class="isPlayerControlsVisible || isEpisodesSidebarOpen || isPlayerPaused ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'"
+        >
+          <button 
+            @click.stop="closePlayer" 
+            class="p-2.5 md:p-3 bg-black/60 hover:bg-red-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer backdrop-blur-xl border border-white/20 hover:scale-105"
+            title="Tutup Player"
+          >
+            <X class="w-6 h-6 md:w-7 md:h-7" />
+          </button>
+
+          <button 
+            v-if="currentPlayState?.type === 'tv'"
+            @click.stop="isEpisodesSidebarOpen = !isEpisodesSidebarOpen" 
+            class="px-4 py-2.5 md:py-3 bg-black/60 hover:bg-blue-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer backdrop-blur-xl border border-white/20 flex items-center gap-2 font-bold text-sm hover:scale-105"
+            title="Daftar Episode"
+          >
+            <Menu class="w-5 h-5" />
+            <span class="hidden sm:inline">Episodes</span>
+          </button>
+
+          <button 
+            @click.stop="toggleFullscreen" 
+            class="p-2.5 md:p-3 bg-black/60 hover:bg-blue-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer backdrop-blur-xl border border-white/20 hover:scale-105"
+            :title="isFullscreen ? 'Kecilkan Layar' : 'Layar Penuh'"
+          >
+            <Minimize v-if="isFullscreen" class="w-5 h-5 md:w-6 md:h-6" />
+            <Maximize v-else class="w-5 h-5 md:w-6 md:h-6" />
+          </button>
+        </div>
+
+        <!-- Top Right: Logo / Title -->
+        <div 
+          class="!fixed top-4 right-6 md:top-6 md:right-8 z-[350] text-right hidden sm:block transition-opacity duration-500"
+          :class="isPlayerControlsVisible || isEpisodesSidebarOpen || isPlayerPaused ? 'opacity-100' : 'opacity-0'"
+        >
+          <img 
+            v-if="currentMedia?.logo_path" 
+            :src="getImageUrl(currentMedia.logo_path, 'w300')" 
+            class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg" 
+            :alt="currentMedia?.title || currentMedia?.name" 
+          />
+          <h2 
+            v-else 
+            class="text-xl md:text-2xl font-black uppercase tracking-tighter drop-shadow-md text-white"
+          >
+            {{ currentMedia?.title || currentMedia?.name }}
+          </h2>
+        </div>
+
+       <div v-if="embedUrl" class="w-full h-full relative overflow-hidden">
+           <div class="w-full h-full">
+             <iframe 
+               :src="embedUrl" 
+               width="100%" 
+               height="100%" 
+               frameborder="0" 
+               allowfullscreen 
+               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; screen-orientation; fullscreen"
+               class="w-full h-full"
+             ></iframe>
+           </div>
+
+           <!-- Episodes Sidebar Drawer -->
+           <div 
+             v-if="currentPlayState?.type === 'tv'"
+             class="!fixed top-0 right-0 bottom-0 w-full sm:w-[380px] md:w-[420px] bg-[#09090b]/90 backdrop-blur-2xl border-l border-white/15 z-[500] flex flex-col transition-transform duration-300 ease-in-out shadow-[-20px_0_60px_rgba(0,0,0,0.9)] pointer-events-auto"
+             :class="isEpisodesSidebarOpen ? 'translate-x-0' : 'translate-x-full'" style="
+    background: #ffffff00;
+"
            >
-             <X class="w-10 h-10" />
-           </button>
-         </div>
+             <!-- Sidebar Header -->
+             <div class="p-4 md:p-5 border-b border-white/15 flex justify-between items-center bg-white/5 pt-6 md:pt-5 backdrop-blur-md">
+               <h3 class="font-black text-white text-base tracking-wider uppercase flex items-center gap-2">
+                 <span class="w-2 h-4 bg-blue-500 rounded-full"></span>
+                 Episodes List
+               </h3>
+              
+             </div>
 
-         <div class="flex justify-end text-right">
-           <img 
-             v-if="currentMedia?.logo_path" 
-             :src="getImageUrl(currentMedia.logo_path, 'w300')" 
-             class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg" 
-             :alt="currentMedia?.title || currentMedia?.name" 
-           />
-           <h2 
-             v-else 
-             class="text-xl md:text-2xl font-black uppercase tracking-tighter drop-shadow-md text-white"
-           >
-             {{ currentMedia?.title || currentMedia?.name }}
-           </h2>
-         </div>
+             <!-- Season Selector Dropdown (Custom Glassmorphism UI) -->
+             <div class="p-3.5 border-b border-white/10 relative z-50 pointer-events-auto" v-if="tvSeasons.length > 0">
+               <button 
+                 @click.stop="isSeasonDropdownOpen = !isSeasonDropdownOpen"
+                 class="w-full bg-white/10 hover:bg-white/15 border border-white/20 rounded-xl text-white px-4 py-2.5 flex items-center justify-between font-bold text-xs transition-all shadow-md backdrop-blur-md cursor-pointer group"
+               >
+                 <div class="flex items-center gap-2">
+                   <Layers class="w-4 h-4 text-blue-400" />
+                   <span>Season {{ currentPlayState.season }}</span>
+                 </div>
+                 <ChevronDown class="w-4 h-4 text-white/70 transition-transform duration-300 group-hover:text-white" :class="isSeasonDropdownOpen ? 'rotate-180' : ''" />
+               </button>
 
-       </div>
-       <div v-if="embedUrl" class="w-full h-full">
-           <iframe :src="embedUrl" width="100%" height="100%" frameborder="0" allowfullscreen class="w-full h-full"></iframe>
+               <!-- Dropdown Menu Options -->
+               <Transition name="fade">
+                 <div 
+                   v-if="isSeasonDropdownOpen" 
+                   class="absolute left-3.5 right-3.5 top-full mt-2 bg-[#121215]/95 border border-white/20 rounded-xl shadow-2xl backdrop-blur-2xl overflow-hidden z-[100] max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 pointer-events-auto"
+                 >
+                   <div 
+                     v-for="season in tvSeasons.filter(s => s.season_number > 0)" 
+                     :key="season.id"
+                     @click.stop="selectSeason(season.season_number)"
+                     class="px-4 py-2.5 text-xs font-semibold text-white/80 hover:text-white hover:bg-blue-600/30 cursor-pointer flex justify-between items-center transition-colors border-b border-white/5 last:border-0"
+                     :class="currentPlayState.season === season.season_number ? 'bg-blue-600/25 text-blue-400 font-bold' : ''"
+                   >
+                     <span>Season {{ season.season_number }}</span>
+                     <span class="text-[10px] text-white/40 font-normal" v-if="season.episode_count">{{ season.episode_count }} Episodes</span>
+                   </div>
+                 </div>
+               </Transition>
+             </div>
+
+             <!-- Episodes List Container -->
+             <div data-lenis-prevent class="flex-1 overflow-y-auto p-3 flex flex-col gap-3 scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent overscroll-contain pb-10">
+               <div v-if="isFetchingEpisodes" class="flex justify-center p-10">
+                 <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+               </div>
+               <div v-else-if="currentSeasonEpisodes.length === 0" class="p-4 text-center text-white/50 text-xs font-medium">
+                 No episodes found.
+               </div>
+               <div 
+                 v-else
+                 v-for="ep in currentSeasonEpisodes" 
+                 :key="ep.id"
+                 @click="changeEpisode(currentPlayState.season, ep.episode_number)"
+                 class="flex gap-3.5 p-3 rounded-xl cursor-pointer transition-all duration-200 group items-center relative bg-white/5 border border-white/10 hover:bg-white/15 hover:border-white/20 shadow-sm"
+                 :class="currentPlayState.episode === ep.episode_number ? '!bg-blue-600/30 !border-blue-500 ring-1 ring-blue-500/80 shadow-[0_0_20px_rgba(59,130,246,0.3)]' : ''"
+               >
+                 <!-- Thumbnail -->
+                 <div class="w-28 h-16 bg-black/80 rounded-lg overflow-hidden relative flex-shrink-0 shadow-md border border-white/10">
+                   <img v-if="ep.still_path" :src="getImageUrl(ep.still_path, 'w300')" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90" />
+                   <div class="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-colors">
+                     <Play class="w-6 h-6 text-white drop-shadow-md" :class="currentPlayState.episode === ep.episode_number ? 'text-blue-400 fill-current' : ''" />
+                   </div>
+                 </div>
+
+                 <!-- Details -->
+                 <div class="flex-1 min-w-0 pr-1">
+                   <div class="flex items-center justify-between gap-1 mb-0.5">
+                     <h4 class="text-white text-xs font-bold truncate transition-colors" :class="currentPlayState.episode === ep.episode_number ? 'text-blue-300 font-extrabold' : 'group-hover:text-blue-300'">
+                       {{ ep.episode_number }}. {{ ep.name }}
+                     </h4>
+                     <span v-if="currentPlayState.episode === ep.episode_number" class="text-[9px] bg-blue-500 text-white font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider flex-shrink-0">Playing</span>
+                   </div>
+                   <p class="text-white/60 text-[11px] line-clamp-2 leading-snug font-medium">{{ ep.overview || 'No description available.' }}</p>
+                 </div>
+               </div>
+             </div>
+           </div>
        </div>
       </div>
     </Transition>
@@ -1362,14 +1709,14 @@ onUnmounted(() => {
             <div class="liquidGlass-text w-full relative z-10">
 
               <div class="flex items-center px-6 py-5 border-b border-white/10 bg-white/5">
-                <Search class="w-6 h-6 text-gray-400 mr-4" />
+                <Search class="w-6 h-6 text-white mr-4" />
 
                 <input
                   id="viora-search-input"
                   v-model="searchQuery"
                   @input="onSearchInput"
                   placeholder="Search movies, series, or actors..."
-                  class="flex-1 bg-transparent outline-none text-xl text-white placeholder:text-gray-500 font-medium
+                  class="flex-1 bg-transparent outline-none text-xl text-white placeholder:text-white/80 font-medium
                   focus:drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
                   autocomplete="off"
                 />

@@ -12,5 +12,19 @@ export default defineConfig({
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
     }
+  },
+  server: {
+    headers: {
+      // Permissions-Policy: matikan fitur yang dipakai popup/tracker
+      'Permissions-Policy': [
+        'geolocation=()',
+        'camera=()',
+        'microphone=()',
+        'payment=()',
+        'usb=()',
+      ].join(', '),
+      'X-Content-Type-Options': 'nosniff',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+    }
   }
 })
