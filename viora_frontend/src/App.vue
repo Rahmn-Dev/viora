@@ -32,7 +32,7 @@ axios.interceptors.response.use(
 );
 
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff } from 'lucide-vue-next';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -119,42 +119,52 @@ const glassTransform = computed(() => {
   }
 })
 
+let _navMagnetRafId = null;
 const handleNavMagnet = (e, index) => {
-  const rect = e.currentTarget.getBoundingClientRect()
+  if (_navMagnetRafId) return;
+  const target = e.currentTarget;
+  const clientX = e.clientX;
+  const clientY = e.clientY;
+  _navMagnetRafId = requestAnimationFrame(() => {
+    const rect = target.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
 
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
-
-  const centerX = rect.width / 2
-  const centerY = rect.height / 2
-
-  const moveX = (x - centerX) * 0.60
-  const moveY = (y - centerY) * 0.60
-
-  magneticOffsets.value[index] = { x: moveX, y: moveY }
-  activeMagnetIndex.value = index
-}
+    magneticOffsets.value[index] = { x: (x - centerX) * 0.40, y: (y - centerY) * 0.40 };
+    activeMagnetIndex.value = index;
+    _navMagnetRafId = null;
+  });
+};
 
 const resetNavMagnet = (index) => {
-  magneticOffsets.value[index] = { x: 0, y: 0 }
-  activeMagnetIndex.value = null
-}
+  if (_navMagnetRafId) {
+    cancelAnimationFrame(_navMagnetRafId);
+    _navMagnetRafId = null;
+  }
+  magneticOffsets.value[index] = { x: 0, y: 0 };
+  activeMagnetIndex.value = null;
+};
 
+let _magnetMoveRafId = null;
 const handleMagnetMove = (e, key) => {
-  const rect = e.currentTarget.getBoundingClientRect()
+  if (_magnetMoveRafId) return;
+  const target = e.currentTarget;
+  const clientX = e.clientX;
+  const clientY = e.clientY;
+  _magnetMoveRafId = requestAnimationFrame(() => {
+    const rect = target.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const centerX = rect.width / 2;
+    const centerY = rect.height / 2;
 
-  const x = e.clientX - rect.left
-  const y = e.clientY - rect.top
-
-  const centerX = rect.width / 2
-  const centerY = rect.height / 2
-
-  const moveX = (x - centerX) * 0.2
-  const moveY = (y - centerY) * 0.2
-
-  magneticOffset.value = { x: moveX, y: moveY }
-  activeMagnet.value = key
-}
+    magneticOffset.value = { x: (x - centerX) * 0.2, y: (y - centerY) * 0.2 };
+    activeMagnet.value = key;
+    _magnetMoveRafId = null;
+  });
+};
 
 let _mouseMoveRafId = null;
 const handleMouseMove = (e) => {
@@ -201,6 +211,20 @@ const loginData = ref({ username: '', password: '' });
 const showPassword = ref(false);
 const isLoggingIn = ref(false);
 const loginError = ref('');
+
+// --- LIQUID GLASS MODE STATE (full | edge | off) ---
+const glassMode = ref(localStorage.getItem('viora_glass_mode') || 'edge');
+
+const setGlassMode = (mode) => {
+  glassMode.value = mode;
+  localStorage.setItem('viora_glass_mode', mode);
+};
+
+const cycleGlassMode = () => {
+  if (glassMode.value === 'full') setGlassMode('edge');
+  else if (glassMode.value === 'edge') setGlassMode('off');
+  else setGlassMode('full');
+};
 
 const isPlayerOpen = ref(false);
 const currentMedia = ref(null); 
@@ -859,7 +883,8 @@ const handleScroll = ({ scroll }) => {
       }
       
       if (currentView.value !== 'home' && !isBrowseLoading.value && !isFetchingMore.value) {
-        const bottomOfWindow = document.documentElement.scrollTop + window.innerHeight >= document.documentElement.offsetHeight - 500;
+        const docHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
+        const bottomOfWindow = scroll + window.innerHeight >= docHeight - 500;
         if (bottomOfWindow) {
           loadMoreBrowseItems();
         }
@@ -950,7 +975,7 @@ onUnmounted(() => {
 
 <template>
   
-  <div class="min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32">
+  <div :class="['min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32', `glass-mode-${glassMode}`]">
     
     <Transition
       enter-active-class="transition-opacity duration-300"
@@ -1621,6 +1646,37 @@ onUnmounted(() => {
                 Account Settings
               </button>
 
+              <!-- Liquid Glass Mode Selector in Profile Dropdown -->
+              <div class="px-2 py-2 border-t border-white/10 mt-2 relative z-10">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
+                  <span>Glass Effect</span>
+                  <span class="text-blue-400 capitalize">{{ glassMode === 'full' ? 'Full 4-L' : glassMode === 'edge' ? 'Edge Border' : 'Pure Off' }}</span>
+                </div>
+                <div class="grid grid-cols-3 gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                  <button 
+                    @click="setGlassMode('full')" 
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    :class="glassMode === 'full' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
+                  >
+                    Full 4L
+                  </button>
+                  <button 
+                    @click="setGlassMode('edge')" 
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    :class="glassMode === 'edge' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
+                  >
+                    Edge
+                  </button>
+                  <button 
+                    @click="setGlassMode('off')" 
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    :class="glassMode === 'off' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
+                  >
+                    Pure
+                  </button>
+                </div>
+              </div>
+
              <button 
                   @click="handleLogout"
                   @mousemove="(e) => handleMagnetMove(e, 'logout')"
@@ -2145,6 +2201,31 @@ onUnmounted(() => {
   filter: url(#glass-distortion);
   -webkit-filter: url(#glass-distortion);
   overflow: hidden;
+}
+
+/* DYNAMIC GLASS MODES */
+.glass-mode-full .liquidGlass-effect {
+  filter: url(#glass-distortion) !important;
+  -webkit-filter: url(#glass-distortion) !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+
+.glass-mode-edge .liquidGlass-effect {
+  filter: url(#glass-distortion) !important;
+  -webkit-filter: url(#glass-distortion) !important;
+  -webkit-mask-image: radial-gradient(ellipse at center, transparent 35%, black 80%) !important;
+  mask-image: radial-gradient(ellipse at center, transparent 35%, black 80%) !important;
+}
+
+.glass-mode-off .liquidGlass-effect {
+  filter: none !important;
+  -webkit-filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
 }
 
 .liquidGlass-tint {
