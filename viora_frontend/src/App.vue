@@ -400,18 +400,35 @@ const fetchUserData = async () => {
   try {
     const historyRes = await api.get('/api/watch-history/');
     const historyData = historyRes.data;
-    if (historyData.length > 0) {
+    if (Array.isArray(historyData) && historyData.length > 0) {
       const historyDetails = await Promise.all(
         historyData.map(async (item) => {
-          const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
-          return { ...tmdbRes.data, media_type: item.media_type, progress_percentage: item.progress_percentage,
-            season: item.season, episode: item.episode
-           };
+          try {
+            const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
+            return { 
+              ...tmdbRes.data, 
+              media_type: item.media_type, 
+              progress_percentage: item.progress_percentage,
+              season: item.season, 
+              episode: item.episode,
+              current_time_seconds: item.current_time_seconds,
+              total_duration: item.total_duration
+            };
+          } catch(e) {
+            console.error(`Failed to fetch TMDB info for history item ${item.tmdb_id}:`, e);
+            return null;
+          }
         })
       );
-      watchHistoryMovies.value = await enrichMoviesWithLogos(historyDetails);
+      const validHistory = historyDetails.filter(Boolean);
+      watchHistoryMovies.value = await enrichMoviesWithLogos(validHistory);
+    } else {
+      watchHistoryMovies.value = [];
     }
-  } catch (error) { console.error("❌ Failed to fetch history:", error); }
+  } catch (error) { 
+    console.error("❌ Failed to fetch history:", error); 
+    watchHistoryMovies.value = [];
+  }
 };
 
 const handleRemoveHistory = async (movie) => {
@@ -688,12 +705,16 @@ const toggleSearch = async () => {
   }
 };
 
-const toggleWatchlist = () => {
-  checkLoginStatus()
+const toggleWatchlist = async () => {
+  await checkLoginStatus();
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   if (isSearchOpen.value) isSearchOpen.value = false;
   if (isProfileOpen.value) isProfileOpen.value = false;
   isWatchlistOpen.value = !isWatchlistOpen.value;
+  if (isWatchlistOpen.value) {
+    await fetchUserData();
+    await fetchWatchlist();
+  }
 };
 
 const handleUserIconClick = () => {
@@ -711,14 +732,16 @@ const handleUserIconClick = () => {
 const handleWatchlistToggle = async (movie, type = null) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const mediaType = type || movie.media_type || 'movie';
+  const movieId = movie.id || movie.tmdb_id;
   try {
     const res = await api.post('/api/watchlist/toggle/', {
-      tmdb_id: movie.id, media_type: mediaType, title: movie.title || movie.name,
+      tmdb_id: movieId, media_type: mediaType, title: movie.title || movie.name,
       poster_path: movie.poster_path, backdrop_path: movie.backdrop_path,
       rating: movie.vote_average, year: (movie.release_date || movie.first_air_date)?.substring(0, 4)
     });
-    if (res.data.status === "added") { watchlist.value.add(movie.id); } 
-    else { watchlist.value.delete(movie.id); }
+    if (res.data.status === "added") { watchlist.value.add(movieId); } 
+    else { watchlist.value.delete(movieId); }
+    await fetchWatchlist();
   } catch (err) { console.error("❌ Failed to update watchlist", err); }
 };
 
@@ -789,12 +812,29 @@ const onSearchInput = () => {
 };
 
 const fetchWatchlist = async () => {
-  if (!isLoggedIn.value) return; // Don't call auth-protected API when not logged in
+  if (!isLoggedIn.value) return; 
   try {
     const res = await api.get('/api/watchlist/');
-    watchlist.value = new Set(res.data.map(item => item.id || item.tmdb_id));
-    watchlistMovies.value = await enrichMoviesWithLogos(res.data);
-  } catch (err) { console.error("gagal ambil watchlist", err); }
+    const items = Array.isArray(res.data) ? res.data : [];
+    watchlist.value = new Set(items.map(item => item.id || item.tmdb_id));
+    const watchListDetails = await Promise.all(
+      items.map(async (item) => {
+        try {
+          if (item.poster_path && item.title) {
+            return { ...item, id: item.id || item.tmdb_id };
+          }
+          const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.id || item.tmdb_id}?api_key=${API_KEY}`);
+          return { ...tmdbRes.data, media_type: item.media_type };
+        } catch(e) {
+          return { ...item, id: item.id || item.tmdb_id };
+        }
+      })
+    );
+    watchlistMovies.value = await enrichMoviesWithLogos(watchListDetails.filter(Boolean));
+  } catch (err) { 
+    console.error("gagal ambil watchlist", err); 
+    watchlistMovies.value = [];
+  }
 };
 
 const handleLogin = async () => {
@@ -840,8 +880,8 @@ const checkLoginStatus = async () => {
     isLoggedIn.value = true;
     currentUser.value = { username: res.data.username, email: res.data.email };
     localStorage.setItem('viora_auth_user', res.data.username);
-    fetchUserData();
-    fetchWatchlist();
+    await fetchUserData();
+    await fetchWatchlist();
   } catch (e) {
     // Tidak ada session aktif
     isLoggedIn.value = false;
