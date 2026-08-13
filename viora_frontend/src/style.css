@@ -87,7 +87,18 @@
   animation: bounce-soft 0.9s ease;
 }
 html {
-  scroll-behavior: smooth;
+  /* scroll-behavior: smooth handled by Lenis */
+}
+
+/* ============================================================
+   Liquid Glass Header — GPU Composited, Zero Repaint
+   The header is promoted to its own compositor layer via
+   translateZ(0). backdrop-filter runs on the GPU independently
+   so it never causes a page repaint on scroll.
+   ============================================================ */
+.viora-header-scrolled {
+  background-color: rgba(10, 10, 18, 0.88);
+  contain: layout style;
 }
 
 /* Animasi Slide-up Premium untuk Modal Watchlist */
