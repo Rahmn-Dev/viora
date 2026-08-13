@@ -7,14 +7,20 @@
 ## ✨ Preview
 
 ### Home Interface
+
+Before:
 <img width="1392" height="780" alt="Screenshot 2026-05-16 at 6 10 49 AM" src="https://github.com/user-attachments/assets/926fa079-5cca-46f2-b861-3b06055639db" />
+
+After:
+<img width="1450" height="741" alt="Screenshot 2026-08-13 at 8 58 59 AM" src="https://github.com/user-attachments/assets/e50f05a9-dfd5-4494-b2ce-f584d8a474f9" />
 
 
 ---
 
 ### Watch History
 
-<img width="1391" height="781" alt="Screenshot 2026-05-16 at 6 11 17 AM" src="https://github.com/user-attachments/assets/3706fbb3-2810-438a-a50b-39659446c275" />
+<img width="1446" height="742" alt="Screenshot 2026-08-13 at 8 55 57 AM" src="https://github.com/user-attachments/assets/864a1b03-74f2-4465-8046-bda3aab93b7a" />
+
 
 ---
 
