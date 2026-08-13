@@ -1650,7 +1650,7 @@ onUnmounted(() => {
               <div class="px-2 py-2 border-t border-white/10 mt-2 relative z-10">
                 <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
                   <span>Glass Effect</span>
-                  <span class="text-blue-400 capitalize">{{ glassMode === 'full' ? 'Full 4-L' : glassMode === 'edge' ? 'Edge Border' : 'Pure Off' }}</span>
+                  <span class="text-blue-400 capitalize">{{ glassMode === 'full' ? 'Full' : glassMode === 'edge' ? 'Edge' : 'Pure' }}</span>
                 </div>
                 <div class="grid grid-cols-3 gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
                   <button 
@@ -1658,7 +1658,7 @@ onUnmounted(() => {
                     class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
                     :class="glassMode === 'full' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
-                    Full 4L
+                    Full
                   </button>
                   <button 
                     @click="setGlassMode('edge')" 
