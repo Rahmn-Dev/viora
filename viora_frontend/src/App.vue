@@ -170,9 +170,90 @@ const currentHeroIndex = ref(0);
 const movieCategories = ref([]);
 const kidsZoneMovies = ref([]); 
 const kidsCategories = ref([]); 
+const upcomingMovies = ref([]);
 const isLoading = ref(true);
 const isScrolled = ref(false);
 let heroTimer = null;
+
+const selectedStudio = ref(null);
+const studioMovies = ref([]);
+const isFetchingStudio = ref(false);
+const isStudiosExpanded = ref(false);
+const vioraProgress = ref(0);
+
+const getLetterProgress = (idx, total = 6) => {
+  const p = vioraProgress.value;
+  const start = (idx / total) * 0.55;
+  const duration = 0.45;
+  const itemP = (p - start) / duration;
+  return Math.min(1, Math.max(0, itemP));
+};
+
+const studiosList = ref([
+  { id: 'marvel', name: 'MARVEL', companyId: 420, badge: 'MARVEL', fallback: 'https://upload.wikimedia.org/wikipedia/commons/b/b9/Marvel_Logo.svg', logo_path: null, invert: false },
+  { id: 'ghibli', name: 'STUDIO GHIBLI', companyId: 10342, badge: 'GHIBLI', fallback: 'https://upload.wikimedia.org/wikipedia/commons/e/e0/Studio_Ghibli_logo.svg', logo_path: null, invert: true },
+  { id: 'pixar', name: 'PIXAR ANIMATION', companyId: 3, badge: 'PIXAR', fallback: 'https://upload.wikimedia.org/wikipedia/commons/4/40/Pixar_Animation_Studios_logo.svg', logo_path: null, invert: true },
+  { id: 'disney', name: 'DISNEY', companyId: 2, badge: 'DISNEY', fallback: 'https://upload.wikimedia.org/wikipedia/commons/3/3e/Disney%2B_logo.svg', logo_path: null, invert: true },
+  { id: 'hbo', name: 'HBO ORIGINALS', companyId: 3268, networkId: 49, badge: 'HBO', fallback: 'https://upload.wikimedia.org/wikipedia/commons/d/de/HBO_logo.svg', logo_path: null, invert: true },
+  { id: 'netflix', name: 'NETFLIX', companyId: 178464, networkId: 213, badge: 'NETFLIX', fallback: 'https://upload.wikimedia.org/wikipedia/commons/0/08/Netflix_2015_logo.svg', logo_path: null, invert: false },
+  { id: 'appletv', name: 'APPLE TV+', companyId: 140087, networkId: 2552, badge: 'APPLE TV+', fallback: 'https://upload.wikimedia.org/wikipedia/commons/2/28/Apple_TV_Plus_Logo.svg', logo_path: null, invert: true },
+  { id: 'dc', name: 'DC UNIVERSE', companyId: 9993, badge: 'DC', fallback: 'https://upload.wikimedia.org/wikipedia/commons/1/1c/DC_Comics_logo.svg', logo_path: null, invert: true },
+  { id: 'warner', name: 'WARNER BROS', companyId: 174, badge: 'WARNER BROS', fallback: 'https://upload.wikimedia.org/wikipedia/commons/6/64/Warner_Bros_logo.svg', logo_path: null, invert: false },
+  { id: 'a24', name: 'A24 FILMS', companyId: 41077, badge: 'A24', fallback: 'https://upload.wikimedia.org/wikipedia/commons/8/87/A24_logo.svg', logo_path: null, invert: true },
+  { id: 'sony', name: 'SONY PICTURES', companyId: 34, badge: 'SONY', fallback: 'https://upload.wikimedia.org/wikipedia/commons/c/ca/Sony_logo.svg', logo_path: null, invert: true },
+  { id: 'dreamworks', name: 'DREAMWORKS', companyId: 521, badge: 'DREAMWORKS', fallback: 'https://upload.wikimedia.org/wikipedia/commons/a/aa/DreamWorks_Animation_logo.svg', logo_path: null, invert: true },
+  { id: 'starwars', name: 'LUCASFILM', companyId: 1, badge: 'LUCASFILM', fallback: 'https://upload.wikimedia.org/wikipedia/commons/7/7b/Lucasfilm_logo.svg', logo_path: null, invert: true },
+  { id: 'universal', name: 'UNIVERSAL', companyId: 33, badge: 'UNIVERSAL', fallback: 'https://upload.wikimedia.org/wikipedia/commons/c/c5/Universal_Pictures_logo.svg', logo_path: null, invert: true },
+  { id: 'paramount', name: 'PARAMOUNT', companyId: 4, badge: 'PARAMOUNT', fallback: 'https://upload.wikimedia.org/wikipedia/commons/1/1a/Paramount_Pictures_logo.svg', logo_path: null, invert: true },
+  { id: 'mgm', name: 'MGM', companyId: 21, badge: 'MGM', fallback: 'https://upload.wikimedia.org/wikipedia/commons/6/62/Metro-Goldwyn-Mayer_logo.svg', logo_path: null, invert: false },
+  { id: 'lionsgate', name: 'LIONSGATE', companyId: 1632, badge: 'LIONSGATE', fallback: 'https://upload.wikimedia.org/wikipedia/commons/e/e7/Lionsgate_2013_logo.svg', logo_path: null, invert: true },
+  { id: 'amazon', name: 'AMAZON STUDIOS', companyId: 20580, networkId: 1024, badge: 'AMAZON', fallback: 'https://upload.wikimedia.org/wikipedia/commons/1/11/Amazon_Prime_Video_logo.svg', logo_path: null, invert: false },
+  { id: 'hulu', name: 'HULU', companyId: 74641, networkId: 453, badge: 'HULU', fallback: 'https://upload.wikimedia.org/wikipedia/commons/e/e4/Hulu_Logo.svg', logo_path: null, invert: false },
+  { id: 'toei', name: 'TOEI ANIMATION', companyId: 5542, badge: 'TOEI ANIME', fallback: 'https://upload.wikimedia.org/wikipedia/commons/d/d4/Toei_Animation_logo.svg', logo_path: null, invert: true },
+  { id: 'nickelodeon', name: 'NICKELODEON', companyId: 2348, networkId: 13, badge: 'NICKELODEON', fallback: 'https://upload.wikimedia.org/wikipedia/commons/7/7a/Nickelodeon_2023_logo.svg', logo_path: null, invert: false },
+  { id: 'cartoonnetwork', name: 'CARTOON NETWORK', companyId: 546, networkId: 56, badge: 'CARTOON NETWORK', fallback: 'https://upload.wikimedia.org/wikipedia/commons/8/80/Cartoon_Network_2010_logo.svg', logo_path: null, invert: true },
+  { id: 'illumination', name: 'ILLUMINATION', companyId: 3341, badge: 'ILLUMINATION', fallback: 'https://upload.wikimedia.org/wikipedia/commons/4/44/Illumination_Entertainment_logo.svg', logo_path: null, invert: true },
+  { id: 'bbc', name: 'BBC STUDIOS', companyId: 3324, networkId: 4, badge: 'BBC', fallback: 'https://upload.wikimedia.org/wikipedia/commons/e/eb/BBC_logo_2021.svg', logo_path: null, invert: true },
+  { id: 'pierrot', name: 'STUDIO PIERROT', companyId: 3234, badge: 'PIERROT', fallback: 'https://upload.wikimedia.org/wikipedia/commons/0/07/Studio_Pierrot_logo.svg', logo_path: null, invert: true }
+]);
+
+const fetchStudioLogos = async () => {
+  try {
+    const promises = studiosList.value.map(st => {
+      const endpoint = st.networkId ? `${BASE_URL}/network/${st.networkId}?api_key=${API_KEY}` : `${BASE_URL}/company/${st.companyId}?api_key=${API_KEY}`;
+      return axios.get(endpoint).catch(() => null);
+    });
+    const responses = await Promise.all(promises);
+    responses.forEach((res, index) => {
+      if (res?.data?.logo_path) {
+        studiosList.value[index].logo_path = res.data.logo_path;
+      }
+    });
+  } catch (err) {
+    console.error("Failed to fetch TMDB studio logos", err);
+  }
+};
+
+const openStudioCollection = async (studio) => {
+  selectedStudio.value = studio;
+  studioMovies.value = [];
+  isFetchingStudio.value = true;
+  try {
+    const filterQuery = studio.networkId ? `with_networks=${studio.networkId}` : `with_companies=${studio.companyId}`;
+    const [movieRes, tvRes] = await Promise.all([
+      axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&${filterQuery}&sort_by=popularity.desc`).catch(() => ({ data: { results: [] } })),
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&${filterQuery}&sort_by=popularity.desc`).catch(() => ({ data: { results: [] } }))
+    ]);
+    const movies = (movieRes.data?.results || []).map(m => ({ ...m, media_type: 'movie' }));
+    const tvs = (tvRes.data?.results || []).map(m => ({ ...m, media_type: 'tv' }));
+    const combined = [...movies, ...tvs].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+    studioMovies.value = await enrichMoviesWithLogos(combined);
+  } catch (error) {
+    console.error("Failed to fetch studio movies", error);
+  } finally {
+    isFetchingStudio.value = false;
+  }
+};
 
 const isSearchOpen = ref(false);
 const searchQuery = ref('');
@@ -182,9 +263,18 @@ let searchTimeout = null;
 
 // --- SEARCH FILTER & PAGINATION STATE ---
 const selectedYear = ref('');
-const selectedGenre = ref('');
+const selectedGenres = ref([]);
 const selectedType = ref(''); // Baru: Filter Movie/TV
 const searchGenres = ref([]);
+
+const toggleSearchGenre = (genreId) => {
+  const idx = selectedGenres.value.indexOf(genreId);
+  if (idx > -1) {
+    selectedGenres.value.splice(idx, 1);
+  } else {
+    selectedGenres.value.push(genreId);
+  }
+};
 
 const searchPage = ref(1); // Baru: Pagination
 const isSearchingMore = ref(false); // Baru: Loading infinite scroll
@@ -306,7 +396,7 @@ const filters = ref({
 
 const availableYears = computed(() => {
   const yrs = [];
-  for (let i = 2026; i >= 2000; i--) yrs.push(i);
+  for (let i = 2026; i >= 1977; i--) yrs.push(i);
   return yrs;
 });
 
@@ -329,8 +419,8 @@ const filteredResults = computed(() => {
       ? (item.release_date || item.first_air_date)?.startsWith(selectedYear.value.toString())
       : true;
 
-    const genreMatch = selectedGenre.value
-      ? item.genre_ids?.includes(Number(selectedGenre.value))
+    const genreMatch = selectedGenres.value.length > 0
+      ? selectedGenres.value.some(gId => item.genre_ids?.includes(Number(gId)))
       : true;
       
     // Filter tipe (Movie / TV)
@@ -379,12 +469,21 @@ const getImageUrl = (path, width = 'w500') => {
   return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=60&w=300&n=-1`;
 };
 
+const logoCache = new Map();
+
 const fetchLogo = async (id, type = 'movie') => {
+  const key = `${type}_${id}`;
+  if (logoCache.has(key)) return logoCache.get(key);
   try {
     const res = await axios.get(`${BASE_URL}/${type}/${id}/images?api_key=${API_KEY}&include_image_language=en,null`);
     const logo = res.data.logos?.find(l => l.file_path.endsWith('.png')) || res.data.logos?.[0];
-    return logo ? logo.file_path : null;
-  } catch (e) { return null; }
+    const path = logo ? logo.file_path : null;
+    logoCache.set(key, path);
+    return path;
+  } catch (e) {
+    logoCache.set(key, null);
+    return null;
+  }
 };
 
 const enrichMoviesWithLogos = async (movies) => {
@@ -440,7 +539,7 @@ const handleRemoveHistory = async (movie) => {
 
 const fetchAllData = async () => {
   try {
-    const [trending, topRatedMovies, action, animation, topRatedTv, korean, horror, family, kidsTv, animeTv] = await Promise.all([
+    const [trending, topRatedMovies, action, animation, topRatedTv, korean, horror, family, kidsTv, animeTv, upcoming] = await Promise.all([
       axios.get(`${BASE_URL}/trending/all/day?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/movie/top_rated?api_key=${API_KEY}`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=28`),
@@ -450,25 +549,34 @@ const fetchAllData = async () => {
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=27`),
       axios.get(`${BASE_URL}/discover/movie?api_key=${API_KEY}&with_genres=10751`), 
       axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=10762`), 
-      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_original_language=ja`) 
+      axios.get(`${BASE_URL}/discover/tv?api_key=${API_KEY}&with_genres=16&with_original_language=ja`),
+      axios.get(`${BASE_URL}/movie/upcoming?api_key=${API_KEY}`)
     ]);
 
     const validTrending = trending.data.results.filter(m => m.vote_average > 0);
     heroMovies.value = await enrichMoviesWithLogos(validTrending.slice(0, 8));
     
+    if (upcoming.data?.results) {
+      const validUpcoming = upcoming.data.results.filter(m => m.poster_path || m.backdrop_path).map(m => ({ ...m, media_type: 'movie' }));
+      upcomingMovies.value = validUpcoming.slice(0, 10);
+    }
+    
     const categoriesData = [
       { id: 1, title: 'Trending Now', layout: 'landscape', raw: validTrending.slice(5, 15) },
       { id: 2, title: 'Top Rated TV Series', layout: 'hero-card', raw: topRatedTv.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
       { id: 3, title: 'K-Dramas', layout: 'portrait', raw: korean.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
-      { id: 4, title: 'Horror Fests', layout: 'portrait', raw: horror.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
+      { id: 4, title: 'Horror Fests', layout: 'hero-card', raw: horror.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
       { id: 5, title: 'Top Rated Movies', layout: 'landscape', raw: topRatedMovies.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
       { id: 6, title: 'Action Thriller', layout: 'portrait', raw: action.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
       { id: 7, title: 'Animation Series', layout: 'landscape', raw: animation.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
     ];
     
-    movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({ 
-      id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw) 
+    fetchStudioLogos();
+
+    movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({
+      id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw)
     })));
+
     const kidsCatsData = [
       { id: 'k1', title: 'Top Animation', layout: 'portrait', raw: animation.data.results.slice(10, 20).map(m=>({...m, media_type: 'movie'})) },
       { id: 'k2', title: 'Family Movies', layout: 'landscape', raw: family.data.results.slice(0, 10).map(m=>({...m, media_type: 'movie'})) },
@@ -481,6 +589,7 @@ const fetchAllData = async () => {
     })));
     
     startHeroCarousel();
+    isLoading.value = false;
   } catch (error) { console.error(error); } finally { isLoading.value = false; }
 };
 
@@ -1100,6 +1209,21 @@ const handleScroll = ({ scroll }) => {
   if (!ticking) {
     window.requestAnimationFrame(() => {
       isScrolled.value = scroll > 50;
+      
+      // Calculate scroll progress for VIORA About Reveal section at page bottom
+      const docHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
+      const windowHeight = window.innerHeight;
+      const maxScroll = docHeight - windowHeight;
+      if (maxScroll > 0) {
+        const distanceToBottom = maxScroll - scroll;
+        // As scroll approaches bottom 600px, progress goes from 0 (separated) to 1 (gathered together)
+        if (distanceToBottom <= 600) {
+          vioraProgress.value = Math.min(1, Math.max(0, 1 - (distanceToBottom / 600)));
+        } else {
+          vioraProgress.value = 0;
+        }
+      }
+
       ticking = false;
       if (!isLoggedIn.value && (currentView.value === 'movie' || currentView.value === 'tv')) {
         if (scroll > 1200 && !hasShownAutoLogin.value && !isLoginOpen.value) {
@@ -1109,7 +1233,6 @@ const handleScroll = ({ scroll }) => {
       }
       
       if (currentView.value !== 'home' && !isBrowseLoading.value && !isFetchingMore.value) {
-        const docHeight = document.body.scrollHeight || document.documentElement.scrollHeight;
         const bottomOfWindow = scroll + window.innerHeight >= docHeight - 500;
         if (bottomOfWindow) {
           loadMoreBrowseItems();
@@ -1906,14 +2029,31 @@ onUnmounted(() => {
               </div>
 
               <div>
-                <p class="text-xs text-gray-400 mb-2">Genre</p>
-                <select v-model="selectedGenre"
-                  class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white">
-                  <option value="">All</option>
-                  <option v-for="g in searchGenres" :key="g.id" :value="g.id">
+                <div class="flex justify-between items-center mb-2">
+                  <p class="text-xs text-gray-400">Genres</p>
+                  <button 
+                    v-if="selectedGenres.length > 0" 
+                    @click="selectedGenres = []" 
+                    type="button" 
+                    class="text-[10px] text-blue-400 font-bold hover:underline cursor-pointer"
+                  >
+                    Reset ({{ selectedGenres.length }})
+                  </button>
+                </div>
+                <div class="flex flex-wrap gap-1.5 max-h-56 overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/20">
+                  <button
+                    v-for="g in searchGenres"
+                    :key="g.id"
+                    @click="toggleSearchGenre(g.id)"
+                    type="button"
+                    class="px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer select-none"
+                    :class="selectedGenres.includes(g.id) 
+                      ? 'bg-blue-600 border-blue-500 text-white shadow-md font-bold' 
+                      : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white'"
+                  >
                     {{ g.name }}
-                  </option>
-                </select>
+                  </button>
+                </div>
               </div>
 
             </div>
@@ -2146,11 +2286,6 @@ onUnmounted(() => {
 
             <div class="absolute bottom-[15%] left-6 lg:left-12 max-w-2xl space-y-8 z-10">
               <div class="space-y-6">
-                <div class="flex items-center gap-3">
-                   <div class="flex items-center bg-[#f5c518] text-black px-2 py-0.5 rounded font-black text-[10px]">IMDb {{ movie.vote_average.toFixed(1) }}</div>
-                   <span class="text-blue-500 font-bold text-[12px] uppercase tracking-[0.3em]">Viora Originals</span>
-                </div>
-
                 <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-lg" />
                 <h2 v-else class="text-5xl lg:text-7xl font-black uppercase  tracking-tighter">{{ movie.title || movie.name }}</h2>
               </div>
@@ -2182,13 +2317,23 @@ onUnmounted(() => {
       </section>
 
       <main class="relative z-20 -mt-20 space-y-10 pb-20">
+
+
        <section v-if="isLoggedIn && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
           <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
-            <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-110 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer">
-              <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" />
+            <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:-translate-y-1 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu will-change-transform group ring-1 ring-white/5 cursor-pointer">
+              <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+              <img 
+                :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" 
+                loading="lazy"
+                decoding="async"
+                class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
+                style="opacity: 0; transform: scale(1.02);"
+                @load="handleImageLoad"
+              />
               <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
                   <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
@@ -2236,29 +2381,41 @@ onUnmounted(() => {
                 'w-[300px] md:w-[390px] aspect-video'
               ]">
               
+              <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+              
               <img :src="getImageUrl(
                  category.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 
                  category.layout === 'portrait' ? 'w500' : 'w780')" 
+                 loading="lazy"
+                 decoding="async"
                  class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
+                 style="opacity: 0; transform: scale(1.02);"
+                 @load="handleImageLoad"
               />
               
-              <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 flex flex-col justify-end" :class="category.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/80 via-black/20'">
-                <div class="mb-2">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" :class="category.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]'" class="object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                  <h4 v-else :class="category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1'" class="font-black uppercase tracking-tighter drop-shadow-md">{{ movie.title || movie.name }}</h4>
+              <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 md:p-8 flex flex-col justify-end" :class="category.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/90 via-black/30'">
+                <div class="mb-1.5 flex items-center gap-3 flex-wrap" :class="category.layout === 'portrait' ? 'justify-center' : ''">
+                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[category.layout === 'hero-card' ? 'max-w-[180px] md:max-w-[280px] max-h-[55px] md:max-h-[75px]' : category.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-lg transition-transform group-hover:scale-105 origin-left" />
+                  <h4 v-else :class="[category.layout === 'hero-card' ? 'text-xl md:text-3xl font-black' : category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1']" class="font-black uppercase tracking-tighter drop-shadow-md text-white">{{ movie.title || movie.name }}</h4>
+
+                  <!-- Year Badge ONLY for hero-card layout next to title/logo -->
+                  <div v-if="category.layout === 'hero-card' && (movie.release_date || movie.first_air_date)" class="px-2.5 py-0.5 rounded-md flex items-center gap-1 text-[11px] md:text-xs text-white/90 bg-black/60 border border-white/20 shadow-md backdrop-blur-sm font-black">
+                    <span>{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                  </div>
                 </div>
-               <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                   <div class="px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-black/60 border border-white/20 shadow-md">
-                     <span class="text-[11px] md:text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-                   </div> 
-                 </div>
-               </div>
-               
-               <div class="absolute inset-0 rounded-2xl pointer-events-none bg-gradient-to-t from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-               
-               <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                  <div class="w-12 h-12 md:w-14 md:h-14 bg-white/25 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform"><Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" /></div>
-               </div>
+
+                <!-- Movie Description for hero-card layout -->
+                <p v-if="category.layout === 'hero-card' && movie.overview" class="text-[11px] md:text-xs text-gray-300/90 line-clamp-2 md:line-clamp-3 max-w-lg mb-2 drop-shadow-md font-medium leading-relaxed">
+                  {{ movie.overview }}
+                </p>
+
+                <!-- Year Badge for non-hero-card layouts (portrait & standard landscape) -->
+                <div v-if="category.layout !== 'hero-card'" class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+                  <div class="px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-black/60 border border-white/20 shadow-md">
+                    <span class="text-[11px] md:text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                  </div> 
+                </div>
+              </div>
                
                <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
                  <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
@@ -2267,67 +2424,183 @@ onUnmounted(() => {
              </div>
            </div>
          </section>
-         
-         <section v-if="currentView === 'home' && kidsCategories.length > 0" class="px-4 lg:px-10 pt-10 pb-16">
-           <!-- Kids Zone: replaced mix-blend-screen blur orbs with pure CSS gradient background — zero GPU compositor layers -->
-           <div class="relative w-full rounded-[3rem] md:rounded-[4rem] overflow-hidden shadow-[0_20px_50px_-10px_rgba(59,130,246,0.3)] pt-12 pb-4"
-                style="background: radial-gradient(ellipse at 10% 10%, rgba(250,204,21,0.35) 0%, transparent 50%), radial-gradient(ellipse at 90% 90%, rgba(236,72,153,0.25) 0%, transparent 50%), #1a1a2e;">
-             
-             <div class="relative z-10 px-8 md:px-12 mb-10 flex flex-col md:flex-row md:items-center gap-4">
-               <div class="relative inline-block">
-                 <svg class="absolute -inset-6 w-[130%] h-[150%] -z-10 text-yellow-400 drop-shadow-lg transform -rotate-3" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-                   <path fill="currentColor" d="M44.7,-76.4C58.8,-69.2,71.8,-59.1,81.3,-46C90.8,-32.9,96.8,-16.4,96.5,-0.2C96.2,16.1,89.5,32.1,80.1,45.3C70.6,58.4,58.3,68.5,44.5,76.5C30.6,84.4,15.3,90.1,0.2,89.8C-14.9,89.5,-29.8,83.1,-43.3,74.7C-56.7,66.3,-68.8,55.9,-77.6,42.9C-86.4,29.8,-92,14.9,-91.3,0.4C-90.6,-14.1,-83.5,-28.2,-74.6,-40.3C-65.7,-52.4,-55,-62.4,-41.8,-70.3C-28.5,-78.1,-14.3,-83.7,0.7,-84.9C15.8,-86.1,31.5,-82.7,44.7,-76.4Z" transform="translate(100 100)" />
-                 </svg>
-                 <h2 class="text-5xl md:text-6xl font-black text-blue-900 tracking-tighter uppercase italic">Kidz <span class="text-white drop-shadow-sm">Zone</span></h2>
-               </div>
-               <p class="text-white font-bold drop-shadow-md text-lg md:text-xl">A safe area full of imagination & adventure!</p>
-             </div>
 
-             <div v-for="(kidCat, catIndex) in kidsCategories" :key="kidCat.id" class="mb-10 last:mb-6">
-                
-                <h3 class="relative z-10 text-xl md:text-2xl font-black text-white px-8 md:px-12 mb-4 drop-shadow-md flex items-center gap-2">
-                  <Star class="w-6 h-6 text-yellow-400 fill-yellow-400" />
-                  {{ kidCat.title }}
-                </h3>
+         <!-- Featured Studios & Franchises Hub -->
+        <section v-if="currentView === 'home'" class="px-6 lg:px-12 py-8 border-t border-b border-white/5 bg-gradient-to-r from-blue-950/20 via-black to-blue-950/20">
+          <div class="flex items-center justify-between mb-6">
+            <h3 class="text-xl md:text-2xl font-black tracking-tight flex items-center gap-3">
+              <span class="w-1.5 h-7 bg-blue-500 rounded-full"></span> Studios & Franchises
+            </h3>
+            <button 
+              @click="isStudiosExpanded = !isStudiosExpanded" 
+              class="text-xs text-blue-400 font-bold uppercase tracking-wider flex items-center gap-1.5 hover:text-blue-300 transition-all bg-blue-500/10 hover:bg-blue-500/20 px-3.5 py-1.5 rounded-full border border-blue-500/20 cursor-pointer shadow-sm"
+            >
+              <span>{{ isStudiosExpanded ? 'Collapse' : 'Lihat Semua (' + studiosList.length + ')' }}</span>
+              <ChevronDown class="w-3.5 h-3.5 transition-transform duration-300" :class="isStudiosExpanded ? 'rotate-180' : ''" />
+            </button>
+          </div>
 
-                <div class="relative z-10 flex gap-5 overflow-x-auto hide-scrollbar pb-6 px-8 md:px-12 snap-x overscroll-x-contain">
-                   <div v-for="movie in kidCat.movies" :key="movie.id" @click="openPlayer(movie)"
-                        :class="[
-                          'relative flex-none rounded-3xl overflow-hidden bg-white/10 transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer border border-white/20 shadow-[0_10px_30px_rgba(0,0,0,0.2)] snap-center',
-                          kidCat.layout === 'portrait' ? 'w-[160px] md:w-[200px] aspect-[2/3]' : 'w-[280px] md:w-[350px] aspect-video'
-                        ]">
-                     
-                     <div class="absolute inset-0 rounded-3xl shadow-[0_0_40px_rgba(250,204,21,0.4)] opacity-0 transition-opacity duration-500 group-hover:opacity-100 pointer-events-none"></div>
+          <!-- Studio Cards Container: Single Horizontal Row by Default OR Grid when Expanded -->
+          <div 
+            :class="[
+              'transform-gpu transition-all duration-500',
+              isStudiosExpanded 
+                ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5' 
+                : 'flex gap-3.5 overflow-x-auto hide-scrollbar pb-2 pt-1 scroll-smooth'
+            ]"
+          >
+            <div 
+              v-for="st in studiosList" 
+              :key="st.id"
+              @click="openStudioCollection(st)" 
+              :class="[
+                'group relative h-20 md:h-24 rounded-2xl overflow-hidden cursor-pointer p-3 flex items-center justify-center border border-white/10 hover:border-blue-500/50 transition-all duration-300 hover:scale-105 bg-[#18181b] hover:bg-[#27272a] shadow-lg transform-gpu will-change-transform',
+                isStudiosExpanded ? 'w-full' : 'w-[140px] sm:w-[170px] md:w-[190px] flex-none'
+              ]"
+            >
+              <!-- Compact White Badge ONLY for Marvel -->
+              <div v-if="st.id === 'marvel'" class="bg-white rounded-lg px-3 py-1.5 shadow-md flex items-center justify-center transition-transform duration-300 group-hover:scale-105">
+                <img 
+                  :src="st.logo_path ? getImageUrl(st.logo_path, 'w185') : st.fallback" 
+                  :alt="st.name"
+                  loading="lazy"
+                  decoding="async"
+                  class="max-h-8 md:max-h-10 w-auto object-contain pointer-events-none"
+                />
+              </div>
 
-                     <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/50 animate-pulse transition-opacity duration-500 z-0"></div>
+              <!-- Normal render for other studios -->
+              <img 
+                v-else
+                :src="st.logo_path ? getImageUrl(st.logo_path, 'w185') : st.fallback" 
+                :alt="st.name"
+                loading="lazy"
+                decoding="async"
+                :class="[
+                  'max-h-10 md:max-h-12 w-auto object-contain transition-transform duration-300 group-hover:scale-110 pointer-events-none transform-gpu',
+                  st.invert ? 'filter brightness-0 invert drop-shadow-[0_2px_8px_rgba(255,255,255,0.3)]' : 'drop-shadow-[0_2px_8px_rgba(0,0,0,0.6)]'
+                ]"
+              />
+            </div>
+          </div>
+        </section>
 
-                     <img :src="movie.poster_path || movie.backdrop_path ? getImageUrl(kidCat.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'"
-                          class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
-                          style="opacity: 0; transform: scale(1.05);" 
-                          @load="handleImageLoad" />
-
-                     <div class="absolute z-20 inset-0 bg-gradient-to-t from-blue-900/90 via-blue-900/30 to-transparent p-4 flex flex-col justify-end items-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
-                        <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" :class="kidCat.layout === 'portrait' ? 'max-w-[100px] max-h-[40px]' : 'max-w-[150px] max-h-[50px]'" class="object-contain drop-shadow-lg mb-2 transform group-hover:scale-110 transition-transform origin-bottom" />
-                        <h4 v-else class="text-sm font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center mb-2 text-white">{{ movie.title || movie.name }}</h4>
-                        
-                        <div class="w-10 h-10 md:w-12 md:h-12 bg-yellow-400 text-blue-900 rounded-full flex items-center justify-center transform scale-50 group-hover:scale-100 transition-transform duration-300 shadow-lg mt-1">
-                           <Play class="w-5 h-5 md:w-6 md:h-6 fill-current" />
-                        </div>
-                     </div>
-
-                     <div class="absolute top-3 right-3 z-30 flex items-center gap-2">
-                       <button @click.stop="openInfo(movie)" class="p-1.5 md:p-2 bg-black/60 hover:bg-yellow-400 hover:text-blue-900 rounded-full transition-colors border border-white/20 hover:border-yellow-400">
-                          <Info class="w-4 h-4 text-white hover:text-blue-900" />
-                       </button>
-                       <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-1.5 md:p-2 bg-black/60 hover:bg-yellow-400 rounded-full transition-colors border border-white/20 hover:border-yellow-400">
-                         <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-blue-900 font-bold" />
-                         <Bookmark v-else class="w-4 h-4 text-white hover:text-blue-900" />
-                       </button>
-                     </div>
-                 </div>
-               </div>
+         <!-- Kidz Zone Section (Clean & Consistent UI) -->
+         <section v-if="currentView === 'home' && kidsCategories.length > 0" class="pl-6 lg:pl-12 pt-8 pb-10 space-y-10 border-t border-white/5">
+            <!-- Kidz Zone Header Title -->
+            <div>
+              <h2 class="text-2xl md:text-3xl font-black tracking-tight flex items-center gap-3">
+                <span class="w-1.5 h-8 bg-yellow-400 rounded-full"></span> 
+                Kidz Zone
+                <span class="px-2.5 py-0.5 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 font-bold text-xs rounded-full ml-1">Safe & Fun</span>
+              </h2>
             </div>
 
+            <!-- Kids Categories Lists (Consistent with regular categories) -->
+            <div v-for="kidCat in kidsCategories" :key="kidCat.id">
+               <h3 class="text-xl md:text-2xl font-black mb-6 tracking-tight flex items-center gap-3">
+                 <span class="w-1.5 h-6 bg-blue-500 rounded-full"></span>
+                 {{ kidCat.title }}
+               </h3>
+
+               <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-6 pt-2 scroll-smooth transform-gpu snap-x">
+                  <div 
+                    v-for="movie in kidCat.movies" 
+                    :key="movie.id" 
+                    @click="openPlayer(movie)"
+                    :class="[
+                      'relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer snap-center',
+                      kidCat.layout === 'portrait' ? 'w-[150px] md:w-[220px] aspect-[2/3]' : 'w-[300px] md:w-[390px] aspect-video'
+                    ]"
+                  >
+                    <!-- Skeleton Overlay -->
+                    <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+
+                    <!-- Poster / Backdrop Image -->
+                    <img 
+                      :src="getImageUrl(kidCat.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), kidCat.layout === 'portrait' ? 'w500' : 'w780')"
+                      loading="lazy"
+                      decoding="async"
+                      class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
+                      style="opacity: 0; transform: scale(1.02);" 
+                      @load="handleImageLoad" 
+                      :alt="movie.title || movie.name"
+                    />
+
+                    <!-- Overlay Gradient & Info -->
+                    <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 flex flex-col justify-end" :class="kidCat.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/90 via-black/30'">
+                      <div class="mb-1 flex items-center gap-2 flex-wrap" :class="kidCat.layout === 'portrait' ? 'justify-center' : ''">
+                        <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[kidCat.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-md transition-transform group-hover:scale-105 origin-left" />
+                        <h4 v-else :class="[kidCat.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1']" class="font-black uppercase tracking-tighter drop-shadow-md text-white">{{ movie.title || movie.name }}</h4>
+                      </div>
+                    </div>
+
+                    <!-- Action Buttons (Info & Watchlist) -->
+                    <div class="absolute top-3 right-3 z-20 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <button 
+                        @click.stop="openInfo(movie)" 
+                        class="p-2 bg-black/60 hover:bg-white/20 text-white rounded-full transition-colors border border-white/20"
+                        title="Info"
+                      >
+                         <Info class="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        @click.stop="handleWatchlistToggle(movie, movie.media_type)" 
+                        class="p-2 bg-black/60 hover:bg-white/20 text-white rounded-full transition-colors border border-white/20"
+                        title="Bookmark"
+                      >
+                        <Check v-if="watchlist.has(movie.id)" class="w-3.5 h-3.5 text-green-400 font-bold" />
+                        <Bookmark v-else class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+               </div>
+            </div>
+         </section>
+
+        <!-- VIORA Monumental Scroll-Driven Typography Reveal (VIORA.) -->
+        <section v-if="currentView === 'home'" class="relative pt-28 pb-16 px-4 md:px-8 overflow-hidden border-t border-white/5 bg-black">
+          <div class="relative z-10 w-full max-w-[1400px] mx-auto flex flex-col items-center text-center">
+            <!-- MONUMENTAL UNIFIED GIANT WORDMARK VIORA. WITH ULTRA-SMOOTH GPU SCROLL REVEAL -->
+            <div class="my-8 overflow-hidden py-4 flex items-baseline justify-center select-none transform-gpu gap-1 sm:gap-2 md:gap-3 lg:gap-4">
+              <!-- Letters V, I, O, R, A -->
+              <div 
+                v-for="(letter, idx) in ['V', 'I', 'O', 'R', 'A']" 
+                :key="idx"
+                class="overflow-hidden inline-flex items-baseline"
+              >
+                <span 
+                  class="text-7xl sm:text-[130px] md:text-[200px] lg:text-[260px] xl:text-[320px] font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white via-slate-100 to-slate-500 transform-gpu will-change-transform cursor-default leading-none block"
+                  :style="{
+                    transform: `translate3d(0, ${(1 - getLetterProgress(idx, 6)) * 120}%, 0)`,
+                    opacity: getLetterProgress(idx, 6) > 0.02 ? getLetterProgress(idx, 6) : 0
+                  }"
+                >
+                  {{ letter }}
+                </span>
+              </div>
+
+              <!-- CLEAN BLUE DOT . -->
+              <div class="overflow-hidden inline-flex items-baseline">
+                <span 
+                  class="text-6xl sm:text-[110px] md:text-[170px] lg:text-[220px] xl:text-[270px] font-black text-blue-500 transform-gpu will-change-transform leading-none ml-1 sm:ml-2 block"
+                  :style="{
+                    transform: `translate3d(0, ${(1 - getLetterProgress(5, 6)) * 120}%, 0) scale(${0.6 + getLetterProgress(5, 6) * 0.4})`,
+                    opacity: getLetterProgress(5, 6) > 0.02 ? getLetterProgress(5, 6) : 0
+                  }"
+                >
+                  .
+                </span>
+              </div>
+            </div>
+
+            <!-- Footer Bottom Credits -->
+            <div class="w-full pt-10 border-t border-white/10 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500 font-medium">
+              <p>© 2026 VIORA CINEMA INC. ALL RIGHTS RESERVED.</p>
+              <div class="flex items-center gap-6 text-slate-400 font-semibold">
+                <a href="#" @click.prevent="window.scrollTo({top:0, behavior:'smooth'})" class="hover:text-white transition-colors flex items-center gap-1">Back to Top ↑</a>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -2373,11 +2646,14 @@ onUnmounted(() => {
                 ]"
                 @click="openInfo(movie)"
               >
-              <img 
+                <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+                <img 
                   :src="getImageUrl(index % 9 === 0 ? (movie.backdrop_path || movie.poster_path) : (movie.poster_path || movie.backdrop_path), index % 9 === 0 ? 'w780' : 'w500')" 
+                  loading="lazy"
+                  decoding="async"
                   class="w-full h-full object-cover group-hover:opacity-100 transition-[opacity,transform] duration-700 group-hover:scale-110" 
                   style="opacity: 0; transform: scale(1.05);"  
-                   @load="handleImageLoad"
+                  @load="handleImageLoad"
                 />
 
                <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end items-center">
@@ -2419,7 +2695,6 @@ onUnmounted(() => {
               <Skeleton v-for="i in 12" :key="i" :class="['rounded-2xl bg-white/5 animate-pulse', i % 9 === 1 ? 'col-span-2 md:col-span-4 lg:col-span-2 aspect-video' : 'col-span-1 aspect-[2/3]']" />
             </div>
         </section>
-
       </main>
     </div>
 
@@ -2553,6 +2828,102 @@ onUnmounted(() => {
       </div>
 
     </div>
+
+    <!-- Studio Collection Modal -->
+    <Transition name="fade">
+      <div 
+        v-if="selectedStudio" 
+        class="fixed inset-0 z-[500] bg-black/80 backdrop-blur-xl flex justify-center items-center p-4 md:p-8"
+        @click.self="selectedStudio = null"
+      >
+        <div class="w-full max-w-6xl max-h-[90vh] bg-[#09090b]/95 border border-white/20 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
+          <!-- Modal Header -->
+          <div class="p-6 md:p-8 border-b border-white/15 flex justify-between items-center bg-white/5 backdrop-blur-md">
+            <div>
+              <div class="flex items-center gap-4">
+                <div class="h-10 md:h-12 px-3 py-1.5 bg-[#f5f5f4] rounded-xl flex items-center justify-center border border-white/20 shadow-md">
+                  <img 
+                    :src="selectedStudio.logo_path ? getImageUrl(selectedStudio.logo_path, 'w300') : selectedStudio.fallback" 
+                    :alt="selectedStudio.name"
+                    class="max-h-8 md:max-h-9 w-auto object-contain"
+                  />
+                </div>
+                <div>
+                  <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">{{ selectedStudio.name }}</h2>
+                  <p class="text-xs md:text-sm text-gray-400 mt-0.5">Exclusive movies & TV series collection</p>
+                </div>
+              </div>
+            </div>
+            <button 
+              @click="selectedStudio = null" 
+              class="p-2.5 bg-white/10 hover:bg-red-600 rounded-full transition-all text-white cursor-pointer"
+            >
+              <X class="w-6 h-6" />
+            </button>
+          </div>
+
+          <!-- Studio Movies Grid -->
+          <div data-lenis-prevent class="flex-1 overflow-y-auto p-6 md:p-8 scrollbar-thin scrollbar-thumb-white/20">
+            <div v-if="isFetchingStudio" class="flex justify-center items-center py-20">
+              <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+            </div>
+            <div v-else-if="studioMovies.length === 0" class="text-center py-20 text-gray-400">
+              No movies found for this studio.
+            </div>
+            <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              <div 
+                v-for="movie in studioMovies" 
+                :key="movie.id" 
+                @click="openPlayer(movie)"
+                class="relative aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-all duration-500 hover:scale-105 hover:-translate-y-1 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/10 cursor-pointer"
+              >
+                <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+                <img 
+                  :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" 
+                  loading="lazy"
+                  decoding="async"
+                  class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-all duration-700 group-hover:scale-105" 
+                  style="opacity: 0; transform: scale(1.02);"
+                  @load="handleImageLoad"
+                />
+                
+                <!-- Bottom Content Overlay -->
+                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent p-4 md:p-5 flex flex-col justify-end">
+                  <div class="mb-1">
+                    <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
+                    <h4 v-else class="text-sm md:text-base font-black uppercase tracking-tight line-clamp-1 text-white">{{ movie.title || movie.name }}</h4>
+                  </div>
+                  
+                  <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-2 group-hover:translate-y-0">
+                    <div class="px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-black/60 border border-white/20 shadow-md">
+                      <span>{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                    </div> 
+                  </div>
+                </div>
+
+                <!-- Hover Center Play Button -->
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none">
+                  <div class="w-12 h-12 md:w-14 md:h-14 bg-white/25 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
+                    <Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" />
+                  </div>
+                </div>
+
+                <!-- Top Right Action Buttons -->
+                <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                  <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors" title="Info">
+                    <Info class="w-4 h-4 text-white" />
+                  </button>
+                  <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors" title="Bookmark">
+                    <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
+                    <Plus v-else class="w-4 h-4 text-white" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
