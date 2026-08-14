@@ -502,11 +502,14 @@ const fetchUserData = async () => {
     if (Array.isArray(historyData) && historyData.length > 0) {
       const historyDetails = await Promise.all(
         historyData.map(async (item) => {
+          let mediaType = item.media_type || 'movie';
           try {
-            const tmdbRes = await axios.get(`${BASE_URL}/${item.media_type}/${item.tmdb_id}?api_key=${API_KEY}`);
+            // Attempt 1: Fetch with primary saved media type
+            const tmdbRes = await axios.get(`${BASE_URL}/${mediaType}/${item.tmdb_id}?api_key=${API_KEY}`);
             return { 
               ...tmdbRes.data, 
-              media_type: item.media_type, 
+              id: item.tmdb_id,
+              media_type: mediaType, 
               progress_percentage: item.progress_percentage,
               season: item.season, 
               episode: item.episode,
@@ -514,18 +517,55 @@ const fetchUserData = async () => {
               total_duration: item.total_duration
             };
           } catch(e) {
-            console.error(`Failed to fetch TMDB info for history item ${item.tmdb_id}:`, e);
-            return null;
+            // Attempt 2: Fallback try opposite media type (e.g. if movie failed 404, try tv)
+            const altType = mediaType === 'movie' ? 'tv' : 'movie';
+            try {
+              const altRes = await axios.get(`${BASE_URL}/${altType}/${item.tmdb_id}?api_key=${API_KEY}`);
+              return {
+                ...altRes.data,
+                id: item.tmdb_id,
+                media_type: altType,
+                progress_percentage: item.progress_percentage,
+                season: item.season,
+                episode: item.episode,
+                current_time_seconds: item.current_time_seconds,
+                total_duration: item.total_duration
+              };
+            } catch(e2) {
+              // Attempt 3: If TMDB returns 404 for both, use basic info saved in database item
+              if (item.title || item.name || item.poster_path) {
+                return {
+                  id: item.tmdb_id,
+                  title: item.title || item.name,
+                  name: item.title || item.name,
+                  poster_path: item.poster_path,
+                  backdrop_path: item.backdrop_path,
+                  vote_average: item.rating || 0,
+                  release_date: item.year ? `${item.year}-01-01` : '',
+                  media_type: mediaType,
+                  progress_percentage: item.progress_percentage,
+                  season: item.season,
+                  episode: item.episode,
+                  current_time_seconds: item.current_time_seconds,
+                  total_duration: item.total_duration
+                };
+              }
+              return null;
+            }
           }
         })
       );
       const validHistory = historyDetails.filter(Boolean);
-      watchHistoryMovies.value = await enrichMoviesWithLogos(validHistory);
+      watchHistoryMovies.value = validHistory;
+      
+      // Non-blocking background logo enrichment
+      enrichMoviesWithLogos(validHistory).then(enriched => {
+        watchHistoryMovies.value = enriched;
+      }).catch(() => {});
     } else {
       watchHistoryMovies.value = [];
     }
   } catch (error) { 
-    console.error("❌ Failed to fetch history:", error); 
     watchHistoryMovies.value = [];
   }
 };
@@ -814,15 +854,18 @@ const toggleSearch = async () => {
   }
 };
 
-const toggleWatchlist = async () => {
-  await checkLoginStatus();
+const toggleWatchlist = () => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   if (isSearchOpen.value) isSearchOpen.value = false;
   if (isProfileOpen.value) isProfileOpen.value = false;
+  
+  // ⚡ INSTANT 0ms MODAL TOGGLE
   isWatchlistOpen.value = !isWatchlistOpen.value;
+
   if (isWatchlistOpen.value) {
-    await fetchUserData();
-    await fetchWatchlist();
+    // Non-blocking background fetch
+    fetchUserData();
+    fetchWatchlist();
   }
 };
 
@@ -1060,7 +1103,7 @@ const handleSeasonChange = async (event) => {
   await fetchEpisodes(currentPlayState.value.tmdbId, newSeason);
 };
 
-const openPlayer = async (movie) => {
+const openPlayer = (movie) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
   currentMedia.value = movie;
@@ -1091,30 +1134,34 @@ const openPlayer = async (movie) => {
     startTime
   };
 
+  // ⚡ INSTANT PLAYER LAUNCH (0ms DELAY)
   embedUrl.value = buildEmbedUrl(currentPlayState.value);
-
   isPlayerOpen.value = true;
-  if(heroTimer) clearInterval(heroTimer); 
-  if(isInfoOpen.value) closeInfo(); 
+  isPlayerPaused.value = false;
+  resetPlayerControlsTimer();
 
+  if (heroTimer) clearInterval(heroTimer); 
+  if (isInfoOpen.value) closeInfo(); 
+
+  // Async background fetch for TV episodes sidebar (does NOT block player launch)
   if (type === 'tv') {
     isEpisodesSidebarOpen.value = false;
-    if (movie.seasons) {
-      tvSeasons.value = movie.seasons;
-    } else {
-      try {
-        const res = await axios.get(`${BASE_URL}/tv/${tmdbId}?api_key=${API_KEY}`);
-        tvSeasons.value = res.data.seasons || [];
-      } catch(e) {}
-    }
-    await fetchEpisodes(tmdbId, targetSeason);
+    (async () => {
+      if (movie.seasons) {
+        tvSeasons.value = movie.seasons;
+      } else {
+        try {
+          const res = await axios.get(`${BASE_URL}/tv/${tmdbId}?api_key=${API_KEY}`);
+          tvSeasons.value = res.data.seasons || [];
+        } catch(e) {}
+      }
+      fetchEpisodes(tmdbId, targetSeason);
+    })();
   } else {
     isEpisodesSidebarOpen.value = false;
     currentSeasonEpisodes.value = [];
     tvSeasons.value = [];
   }
-  isPlayerPaused.value = false;
-  resetPlayerControlsTimer();
 };
 
 const closePlayer = () => {
@@ -1862,7 +1909,7 @@ onUnmounted(() => {
         @click.self="toggleSearch"
       >
 
-        <div class="relative w-full max-w-4xl mx-4 flex gap-4">
+        <div class="relative w-full max-w-5xl mx-4 flex gap-4">
 
           <!-- Main Search Panel with Liquid Glass -->
           <div class="liquidGlass-wrapper flex-1 !rounded-3xl shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] relative overflow-hidden">
@@ -1897,7 +1944,7 @@ onUnmounted(() => {
                 </div>
               </div>
 
-              <div v-if="searchQuery" class="max-h-[60vh] overflow-y-auto hide-scrollbar p-2" @scroll="handleSearchScroll">
+              <div v-if="searchQuery" class="max-h-[65vh] overflow-y-auto hide-scrollbar p-3" @scroll="handleSearchScroll">
 
                 <div v-if="isSearching" class="p-10 flex flex-col items-center gap-3">
                   <Loader2 class="w-8 h-8 animate-spin text-blue-500" />
@@ -1911,84 +1958,85 @@ onUnmounted(() => {
                   </p>
                 </div>
 
-                <div v-else class="space-y-2 p-1">
+                <!-- Rich Watch-History Style Card Grid for Search Results -->
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-2">
                   <div 
                     v-for="item in filteredResults"
                     :key="item.id"
                     @click="openPlayer(item)"
-                    class="flex items-center gap-4 p-3 rounded-xl cursor-pointer 
-                    bg-white/[0.04] hover:bg-white/[0.1] 
-                    border border-transparent hover:border-white/10
-                    transition-all duration-300 group"
+                    class="relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer border border-white/10 aspect-video col-span-1 shadow-xl ring-1 ring-white/5"
                   >
+                    <!-- Skeleton Overlay -->
+                    <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse z-0"></div>
 
-                    <div class="w-14 h-20 bg-white/5 rounded-md overflow-hidden flex-shrink-0">
+                    <!-- Backdrop / Poster Image -->
+                    <img 
+                      :src="item.backdrop_path || item.poster_path ? getImageUrl(item.backdrop_path || item.poster_path, 'w780') : 'https://via.placeholder.com/780x438?text=No+Image'"
+                      loading="lazy"
+                      decoding="async"
+                      class="relative z-10 w-full h-full object-cover opacity-85 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
+                      style="opacity: 0; transform: scale(1.02);" 
+                      @load="handleImageLoad" 
+                      :alt="item.title || item.name"
+                    />
+
+                    <!-- Content Overlay -->
+                    <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent p-4 flex flex-col justify-end items-start pointer-events-none">
+                      <!-- Title or Logo -->
                       <img 
-                        :src="getImageUrl(item.poster_path || item.backdrop_path, 'w185')" 
-                        class="w-full h-full object-cover group-hover:scale-110 transition duration-500"
+                        v-if="item.logo_path" 
+                        :src="getImageUrl(item.logo_path, 'w300')" 
+                        class="max-w-[130px] max-h-[38px] object-contain drop-shadow-md mb-1.5 origin-bottom-left" 
                       />
-                    </div>
-
-                    <div class="flex-1 min-w-0">
-
-                      <img 
-                        v-if="item.logo_path"
-                        :src="getImageUrl(item.logo_path, 'w300')"
-                        class="max-h-[28px] max-w-[140px] object-contain mb-1 drop-shadow-md"
-                      />
-
-                      <h4 v-else class="text-white font-bold text-lg truncate">
+                      <h4 
+                        v-else 
+                        class="text-sm font-black uppercase tracking-tighter line-clamp-1 drop-shadow-md text-white mb-1"
+                      >
                         {{ item.title || item.name }}
                       </h4>
 
-                      <div class="flex items-center gap-3 text-xs text-gray-400 mt-2">
-
-                        <span class="bg-white/10 px-2 py-0.5 rounded text-white">
+                      <!-- Badges (Type, Year, Rating Badges) -->
+                      <div class="flex items-center gap-1.5 text-[11px] font-bold text-gray-300 flex-wrap">
+                        <span class="bg-blue-500/20 border border-blue-500/40 text-blue-400 px-2 py-0.5 rounded-md uppercase tracking-wider text-[10px] font-black">
                           {{ item.media_type === 'tv' ? 'Series' : 'Movie' }}
                         </span>
-
-                        <span>
+                        <span v-if="item.release_date || item.first_air_date" class="px-2 py-0.5 bg-black/60 border border-white/20 text-white/90 rounded-md text-[10px] font-bold shadow-sm">
                           {{ (item.release_date || item.first_air_date)?.substring(0,4) }}
                         </span>
-
-                        <span class="flex items-center gap-1 text-yellow-500">
-                          ⭐ {{ item.vote_average?.toFixed(1) }}
+                        <span v-if="item.vote_average" class="px-2 py-0.5 bg-yellow-400/20 border border-yellow-400/40 text-yellow-300 rounded-md text-[10px] font-bold shadow-sm">
+                          {{ item.vote_average?.toFixed(1) }}
                         </span>
                       </div>
                     </div>
 
-                    <div class="flex items-center gap-2">
-
+                    <!-- Top Action Buttons (Info & Watchlist) -->
+                    <div class="absolute top-3 right-3 z-30 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                       <button 
-                        @click.stop="openInfo(item)"
-                        class="w-10 h-10 rounded-full flex items-center justify-center 
-                        bg-white/5 hover:bg-white/15 transition"
+                        @click.stop="openInfo(item)" 
+                        class="p-2 bg-black/60 hover:bg-white hover:text-black rounded-full transition-colors border border-white/20 text-white"
+                        title="Info"
                       >
-                        <Info class="w-4 h-4 text-white" />
+                        <Info class="w-3.5 h-3.5" />
                       </button>
-
                       <button 
-                        @click.stop="handleWatchlistToggle(item, item.media_type)"
-                        class="w-10 h-10 rounded-full flex items-center justify-center 
-                        bg-white/5 hover:bg-blue-500/20 transition"
+                        @click.stop="handleWatchlistToggle(item, item.media_type)" 
+                        class="p-2 bg-black/60 hover:bg-yellow-400 hover:text-blue-950 text-white rounded-full transition-colors border border-white/20"
+                        title="Bookmark"
                       >
-                        <Check 
-                          v-if="watchlist.has(item.id)" 
-                          class="w-4 h-4 text-green-400" 
-                        />
-                        <Bookmark 
-                          v-else 
-                          class="w-4 h-4 text-white" 
-                        />
+                        <Check v-if="watchlist.has(item.id)" class="w-3.5 h-3.5 text-green-400 font-bold" />
+                        <Bookmark v-else class="w-3.5 h-3.5" />
                       </button>
-
-                      <div class="w-10 h-10 rounded-full flex items-center justify-center 
-                      group-hover:bg-white/10 transition">
-                        <Play class="w-5 h-5 text-gray-400 group-hover:text-white" />
-                      </div>
-
                     </div>
+
+                    <!-- Hover Center Play Button (Ultra-lightweight, zero blur) -->
+                    <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                      <div class="w-12 h-12 bg-black/70 text-white rounded-full flex items-center justify-center border border-white/30 transform scale-75 group-hover:scale-100 transition-transform shadow-xl">
+                        <Play class="w-5 h-5 fill-current ml-0.5" />
+                      </div>
+                    </div>
+
                   </div>
+                </div>
                   
                   <div v-if="isSearchingMore" class="p-4 flex justify-center">
                     <Loader2 class="w-6 h-6 animate-spin text-blue-500" />
@@ -1996,7 +2044,6 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
-          </div>
 
           <!-- Search Filter Sidebar with Liquid Glass -->
           <div class="liquidGlass-wrapper w-[220px] hidden md:flex flex-col !rounded-3xl relative overflow-hidden">
