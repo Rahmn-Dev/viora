@@ -13,19 +13,35 @@ const api = axios.create({
   withCredentials: true,  // kirim session cookie di setiap request ke backend
 });
 
-// Axios default tidak mengirim CSRF token beda port (cross-origin), jadi kita manual:
+// Simpan CSRF token di memory untuk dikirim ulang
+let currentCsrfToken = '';
+
+// Interceptor Request: Masukkan CSRF Token ke header
 api.interceptors.request.use(config => {
-  const match = document.cookie.match(/(^|;\\s*)csrftoken=([^;]*)/);
-  if (match) {
-    config.headers['X-CSRFToken'] = match[2];
+  if (currentCsrfToken) {
+    config.headers['X-CSRFToken'] = currentCsrfToken;
+  } else {
+    // Fallback baca cookie (berguna saat local dev)
+    const match = document.cookie.match(/(^|;\\s*)csrftoken=([^;]*)/);
+    if (match) {
+      config.headers['X-CSRFToken'] = match[2];
+    }
   }
   return config;
 });
 
-// Jika session kedaluwarsa (401), logout otomatis
+// Interceptor Response: Tangkap CSRF Token baru dari backend
 api.interceptors.response.use(
-  res => res,
+  res => {
+    if (res.data && res.data.csrf_token) {
+      currentCsrfToken = res.data.csrf_token;
+    }
+    return res;
+  },
   (err) => {
+    if (err.response?.data?.csrf_token) {
+      currentCsrfToken = err.response.data.csrf_token;
+    }
     if (err.response?.status === 401 && !err.config?.url?.includes('/api/me/')) {
       handleLogout();
     }

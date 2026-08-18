@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.middleware.csrf import get_token
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -41,6 +42,7 @@ def api_login(request):
         'username': user.username,
         'email': user.email,
         'is_staff': user.is_staff,
+        'csrf_token': get_token(request)
     })
 
 
@@ -62,8 +64,9 @@ def api_me(request):
             'username': request.user.username,
             'email': request.user.email,
             'is_staff': request.user.is_staff,
+            'csrf_token': get_token(request)
         })
-    return Response({'detail': 'Not authenticated.'}, status=401)
+    return Response({'detail': 'Not authenticated.', 'csrf_token': get_token(request)}, status=401)
 
 
 @api_view(['POST'])
@@ -92,6 +95,7 @@ def api_register(request):
     return Response({
         'username': user.username,
         'email': user.email,
+        'csrf_token': get_token(request)
     }, status=201)
 
 
