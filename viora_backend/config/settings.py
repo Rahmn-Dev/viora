@@ -167,7 +167,13 @@ REST_FRAMEWORK = {
 # Session config
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 7 hari
 SESSION_SAVE_EVERY_REQUEST = True
-SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_HTTPONLY = True
+
 # Di production set True, di dev biarkan False karena pakai http
-SESSION_COOKIE_SECURE = False
+
+
+SESSION_COOKIE_SAMESITE = 'None' if not DEBUG else 'Lax'
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG
+
+CSRF_COOKIE_SAMESITE = 'None' if not DEBUG else 'Lax'
+CSRF_COOKIE_SECURE = not DEBUG
