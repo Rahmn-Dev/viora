@@ -7,7 +7,7 @@ from core.views import (
     api_login,
     api_logout,
     api_me,
-    api_register,
+    
 )
 
 urlpatterns = [
@@ -17,8 +17,7 @@ urlpatterns = [
     path('api/login/', api_login),
     path('api/logout/', api_logout),
     path('api/me/', api_me),
-    path('api/register/', api_register),
-
+   
     # Watch History
     path('api/watch-history/', UpdateWatchHistoryView.as_view(), name='update_watch_history'),
 
