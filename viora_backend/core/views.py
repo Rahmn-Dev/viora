@@ -5,12 +5,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 from .models import WatchHistory, Watchlist
 
-
-@csrf_exempt
 @api_view(['POST'])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @permission_classes([AllowAny])
 def api_login(request):
     """Login menggunakan username/email + password, pakai Django session."""
@@ -44,7 +44,6 @@ def api_login(request):
     })
 
 
-@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def api_logout(request):
@@ -66,8 +65,8 @@ def api_me(request):
     return Response({'detail': 'Not authenticated.'}, status=401)
 
 
-@csrf_exempt
 @api_view(['POST'])
+@throttle_classes([AnonRateThrottle, UserRateThrottle])
 @permission_classes([AllowAny])
 def api_register(request):
     """Registrasi akun baru."""

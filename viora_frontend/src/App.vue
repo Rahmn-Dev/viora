@@ -1,7 +1,7 @@
 <script setup>
 
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, Menu, Maximize, Minimize } from 'lucide-vue-next';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, Menu, Maximize, Minimize, Lock } from 'lucide-vue-next';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,6 +11,8 @@ import Lenis from 'lenis';
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:1234',
   withCredentials: true,  // kirim session cookie di setiap request ke backend
+  xsrfCookieName: 'csrftoken',
+  xsrfHeaderName: 'X-CSRFToken',
 });
 
 // Jika session kedaluwarsa (401), logout otomatis
@@ -793,6 +795,7 @@ const smoothHorizontalScroll = (e) => {
 };
 
 const loadMoreBrowseItems = async () => {
+  if (!isLoggedIn.value && browsePage.value > 1) return;
   if (isFetchingMore.value) return;
   isFetchingMore.value = true;
   
@@ -1039,6 +1042,12 @@ const handleLogout = async () => {
   watchlistMovies.value = [];
   watchlist.value.clear();
   localStorage.removeItem('viora_auth_user');
+  
+  // Kick user out of the player and return to home instantly
+  if (isPlayerOpen.value) {
+    closePlayer();
+  }
+  currentView.value = 'home';
 };
 
 
@@ -1159,6 +1168,7 @@ const openPlayer = (movie) => {
 
   if (heroTimer) clearInterval(heroTimer); 
   if (isInfoOpen.value) closeInfo(); 
+  if (selectedStudio.value) selectedStudio.value = null;
 
   // Async background fetch for TV episodes sidebar (does NOT block player launch)
   if (type === 'tv') {
@@ -1379,6 +1389,16 @@ const blockAdsAndTrackers = () => {
 };
 
 onMounted(() => {
+  // Anti Inspect Element & Right Click
+  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'F12' || 
+        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) ||
+        (e.ctrlKey && (e.key === 'U' || e.key === 'u'))) {
+      e.preventDefault();
+    }
+  });
+
   if (typeof window !== 'undefined') {
     lenis = new Lenis({
         duration: 0.9,
@@ -1611,7 +1631,7 @@ onUnmounted(() => {
         >
           <button 
             @click.stop="closePlayer" 
-            class="p-2.5 md:p-3 bg-black/60 hover:bg-red-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer backdrop-blur-xl border border-white/20 hover:scale-105"
+            class="p-2.5 md:p-3 bg-black/60 hover:bg-red-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer border border-white/20 hover:scale-105"
             title="Tutup Player"
           >
             <X class="w-6 h-6 md:w-7 md:h-7" />
@@ -1620,7 +1640,7 @@ onUnmounted(() => {
           <button 
             v-if="currentPlayState?.type === 'tv'"
             @click.stop="isEpisodesSidebarOpen = !isEpisodesSidebarOpen" 
-            class="px-4 py-2.5 md:py-3 bg-black/60 hover:bg-blue-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer backdrop-blur-xl border border-white/20 flex items-center gap-2 font-bold text-sm hover:scale-105"
+            class="px-4 py-2.5 md:py-3 bg-black/60 hover:bg-blue-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer border border-white/20 flex items-center gap-2 font-bold text-sm hover:scale-105"
             title="Daftar Episode"
           >
             <Menu class="w-5 h-5" />
@@ -1629,7 +1649,7 @@ onUnmounted(() => {
 
           <button 
             @click.stop="toggleFullscreen" 
-            class="p-2.5 md:p-3 bg-black/60 hover:bg-blue-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer backdrop-blur-xl border border-white/20 hover:scale-105"
+            class="p-2.5 md:p-3 bg-black/60 hover:bg-blue-600 rounded-full transition-all duration-300 text-white shadow-2xl cursor-pointer border border-white/20 hover:scale-105"
             :title="isFullscreen ? 'Kecilkan Layar' : 'Layar Penuh'"
           >
             <Minimize v-if="isFullscreen" class="w-5 h-5 md:w-6 md:h-6" />
@@ -1668,29 +1688,33 @@ onUnmounted(() => {
                class="w-full h-full"
              ></iframe>
            </div>
+           <!-- Invisible overlay to close sidebar when clicking outside -->
+           <div 
+             v-if="isEpisodesSidebarOpen" 
+             class="!fixed inset-0 z-[490] pointer-events-auto" 
+             @click.stop="isEpisodesSidebarOpen = false"
+           ></div>
 
            <!-- Episodes Sidebar Drawer -->
            <div 
              v-if="currentPlayState?.type === 'tv'"
-             class="!fixed top-0 right-0 bottom-0 w-full sm:w-[380px] md:w-[420px] bg-[#09090b]/90 backdrop-blur-2xl border-l border-white/15 z-[500] flex flex-col transition-transform duration-300 ease-in-out shadow-[-20px_0_60px_rgba(0,0,0,0.9)] pointer-events-auto"
-             :class="isEpisodesSidebarOpen ? 'translate-x-0' : 'translate-x-full'" style="
-    background: #ffffff00;
-"
+             class="!fixed top-0 right-0 bottom-0 w-full sm:w-[380px] md:w-[420px] bg-[#09090b]/85 border-l border-white/15 z-[500] flex flex-col transition-transform duration-300 ease-in-out shadow-[-20px_0_60px_rgba(0,0,0,0.9)] pointer-events-auto"
+             :class="isEpisodesSidebarOpen ? 'translate-x-0' : 'translate-x-full'"
            >
              <!-- Sidebar Header -->
-             <div class="p-4 md:p-5 border-b border-white/15 flex justify-between items-center bg-white/5 pt-6 md:pt-5 backdrop-blur-md">
+             <div class="p-4 md:p-5 border-b border-white/15 flex justify-between items-center bg-[#121215] pt-6 md:pt-5">
                <h3 class="font-black text-white text-base tracking-wider uppercase flex items-center gap-2">
-                 <span class="w-2 h-4 bg-blue-500 rounded-full"></span>
+                 <span class="w-1.5 h-6 bg-blue-500 rounded-full"></span>
                  Episodes List
                </h3>
               
              </div>
 
-             <!-- Season Selector Dropdown (Custom Glassmorphism UI) -->
+             <!-- Season Selector Dropdown (Custom UI) -->
              <div class="p-3.5 border-b border-white/10 relative z-50 pointer-events-auto" v-if="tvSeasons.length > 0">
                <button 
                  @click.stop="isSeasonDropdownOpen = !isSeasonDropdownOpen"
-                 class="w-full bg-white/10 hover:bg-white/15 border border-white/20 rounded-xl text-white px-4 py-2.5 flex items-center justify-between font-bold text-xs transition-all shadow-md backdrop-blur-md cursor-pointer group"
+                 class="w-full bg-[#18181b] hover:bg-[#27272a] border border-white/10 rounded-xl text-white px-4 py-2.5 flex items-center justify-between font-bold text-xs transition-all shadow-md cursor-pointer group"
                >
                  <div class="flex items-center gap-2">
                    <Layers class="w-4 h-4 text-blue-400" />
@@ -1703,7 +1727,7 @@ onUnmounted(() => {
                <Transition name="fade">
                  <div 
                    v-if="isSeasonDropdownOpen" 
-                   class="absolute left-3.5 right-3.5 top-full mt-2 bg-[#121215]/95 border border-white/20 rounded-xl shadow-2xl backdrop-blur-2xl overflow-hidden z-[100] max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 pointer-events-auto"
+                   class="absolute left-3.5 right-3.5 top-full mt-2 bg-[#121215] border border-white/20 rounded-xl shadow-2xl overflow-hidden z-[100] max-h-48 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 pointer-events-auto"
                  >
                    <div 
                      v-for="season in tvSeasons.filter(s => s.season_number > 0)" 
@@ -1963,16 +1987,31 @@ onUnmounted(() => {
 
               <div v-if="searchQuery" class="max-h-[65vh] overflow-y-auto hide-scrollbar p-3" @scroll="handleSearchScroll">
 
-                <div v-if="isSearching" class="p-10 flex flex-col items-center gap-3">
-                  <Loader2 class="w-8 h-8 animate-spin text-blue-500" />
-                  <span class="text-sm text-gray-400 animate-pulse">Searching...</span>
+                <div v-if="isSearching" class="py-24 flex flex-col items-center justify-center gap-6">
+                  <div class="relative w-20 h-20 flex items-center justify-center">
+                    <div class="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
+                    <div class="absolute inset-0 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                    <Search class="w-8 h-8 text-white animate-pulse" />
+                  </div>
+                  <div class="text-center">
+                    <h3 class="text-xl font-bold text-white mb-1">Searching Universe...</h3>
+                    <p class="text-sm text-gray-400">Looking for "<span class="text-white">{{ searchQuery }}</span>"</p>
+                  </div>
                 </div>
 
-                <div v-else-if="filteredResults.length === 0" class="p-10 text-center">
-                  <Search class="w-12 h-12 text-gray-600 mb-3 mx-auto" />
-                  <p class="text-gray-400">
-                    No results for "<span class="text-white">{{ searchQuery }}</span>"
-                  </p>
+                <div v-else-if="filteredResults.length === 0" class="py-24 flex flex-col items-center justify-center gap-5">
+                  <div class="relative w-24 h-24 bg-white/5 rounded-full flex items-center justify-center mb-2 shadow-inner border border-white/10">
+                    <Search class="w-10 h-10 text-white opacity-80" />
+                    <div class="absolute top-2 right-2 w-7 h-7 bg-red-500 rounded-full flex items-center justify-center border-2 border-[#18181b]">
+                      <X class="w-4 h-4 text-white font-bold" />
+                    </div>
+                  </div>
+                  <div class="text-center">
+                    <h3 class="text-2xl font-black text-white mb-2 tracking-tight">No matches found</h3>
+                    <p class="text-gray-400 max-w-sm mx-auto leading-relaxed">
+                      We couldn't find anything for "<span class="text-white font-medium">{{ searchQuery }}</span>". Try adjusting your keywords or browse our categories.
+                    </p>
+                  </div>
                 </div>
 
                 <!-- Rich Watch-History Style Card Grid for Search Results -->
@@ -2046,9 +2085,10 @@ onUnmounted(() => {
                     </div>
 
                     <!-- Hover Center Play Button (Ultra-lightweight, zero blur) -->
-                    <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                    <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-30">
                       <div class="w-12 h-12 bg-black/70 text-white rounded-full flex items-center justify-center border border-white/30 transform scale-75 group-hover:scale-100 transition-transform shadow-xl">
-                        <Play class="w-5 h-5 fill-current ml-0.5" />
+                        <Lock v-if="!isLoggedIn" class="w-5 h-5 text-white" />
+                        <Play v-else class="w-5 h-5 fill-current ml-0.5" />
                       </div>
                     </div>
 
@@ -2128,39 +2168,39 @@ onUnmounted(() => {
     </Transition>
 
     <Transition name="fade">
-      <div v-if="isLoginOpen" class="fixed inset-0 z-[100] bg-black/0 flex justify-center items-center p-4" @click.self="isLoginOpen = false">
+      <div v-if="isLoginOpen" class="fixed inset-0 z-[1000] bg-black/0 flex justify-center items-center p-4" @click.self="isLoginOpen = false">
         <div class="liquidGlass-wrapper w-full max-w-md !rounded-[2rem] shadow-[0_20px_60px_-15px_rgba(0,0,0,1)] relative overflow-hidden">
           <div class="liquidGlass-effect !rounded-[2rem]"></div>
           <div class="liquidGlass-tint !rounded-[2rem]"></div>
           <div class="liquidGlass-shine !rounded-[2rem]"></div>
           <div class="liquidGlass-text w-full p-8 relative z-10">
-            <button @click="isLoginOpen = false" class="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-full transition-colors z-20"><X class="w-5 h-5 text-gray-400" /></button>
+            <button @click="isLoginOpen = false" class="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-full transition-colors z-20 group"><X class="w-5 h-5 text-white/70 group-hover:text-white" /></button>
             <div class="text-center mb-8">
               <div class="w-16 h-16 rounded-full bg-gradient-to-tr from-blue-500 to-blue-400 p-[2px] mx-auto mb-4 shadow-lg shadow-blue-500/20">
                 <div class="w-full h-full rounded-full bg-[#09090b] flex items-center justify-center"><UserIcon class="w-8 h-8 text-white" /></div>
               </div>
               <h2 class="text-3xl font-black tracking-tighter text-white">Welcome Back</h2>
-              <p class="text-sm text-gray-400 mt-1">Sign in to your Viora account</p>
+              <p class="text-sm text-white/80 mt-1">Sign in to your Viora account</p>
             </div>
             <form @submit.prevent="handleLogin" class="space-y-5">
               <div>
-                <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Username</label>
-                <input id="viora-username-input" v-model="loginData.username" type="text" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" placeholder="Enter your username" required />
+                <label class="block text-xs font-bold text-white uppercase tracking-wider mb-2">Username</label>
+                <input id="viora-username-input" v-model="loginData.username" type="text" class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder:text-white/60 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" placeholder="Enter your username" required />
               </div>
               <div>
-                <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Password</label>
+                <label class="block text-xs font-bold text-white uppercase tracking-wider mb-2">Password</label>
                 <div class="relative">
                   <input 
                     v-model="loginData.password" 
                     :type="showPassword ? 'text' : 'password'" 
-                    class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 pr-11 text-white placeholder:text-gray-600 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" 
+                    class="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3.5 pr-11 text-white placeholder:text-white/60 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" 
                     placeholder="••••••••" 
                     required 
                   />
                   <button 
                     type="button" 
                     @click="showPassword = !showPassword" 
-                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                    class="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/70 hover:text-white transition-colors"
                   >
                     <EyeOff v-if="showPassword" class="w-5 h-5" />
                     <Eye v-else class="w-5 h-5" />
@@ -2412,9 +2452,10 @@ onUnmounted(() => {
               <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80">
                 <div class="h-full bg-blue-500" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
               </div>
-              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100">
+              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 z-30 pointer-events-none">
                 <div class="w-14 h-14 bg-white/25 rounded-full flex items-center justify-center border border-white/30">
-                  <Play class="w-6 h-6 text-white fill-current" />
+                  <Lock v-if="!isLoggedIn" class="w-6 h-6 text-white" />
+                  <Play v-else class="w-6 h-6 text-white fill-current" />
                 </div>
               </div>
               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
@@ -2668,7 +2709,7 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section v-if="currentView !== 'home'" class="px-6 lg:px-12 pt-10 border-t border-white/10">
+        <section v-if="currentView !== 'home'" class="px-6 lg:px-12 pt-10 border-t border-white/10 relative">
             <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 relative z-30">
               <h2 class="text-3xl md:text-4xl font-black tracking-tight flex items-center gap-4">
                 <span class="w-2 h-10 bg-blue-500 rounded-full"></span> 
@@ -2709,61 +2750,136 @@ onUnmounted(() => {
             </div>
 
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 auto-rows-max">
-              <div 
-                v-for="(movie, index) in browseItems" :key="movie.id"
-                :class="[
-                   'relative rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer',
-                   index % 9 === 0 ? 'col-span-2 md:col-span-4 lg:col-span-2 aspect-video' : 'col-span-1 aspect-[2/3]'
-                ]"
-                @click="openInfo(movie)"
-              >
-                <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
-                <img 
-                  :src="getImageUrl(index % 9 === 0 ? (movie.backdrop_path || movie.poster_path) : (movie.poster_path || movie.backdrop_path), index % 9 === 0 ? 'w780' : 'w500')" 
-                  loading="lazy"
-                  decoding="async"
-                  class="w-full h-full object-cover group-hover:opacity-100 transition-[opacity,transform] duration-700 group-hover:scale-110" 
-                  style="opacity: 0; transform: scale(1.05);"  
-                  @load="handleImageLoad"
-                />
-
-               <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent p-5 flex flex-col justify-end items-center">
-                  <div class="mb-2">
-                    
+              <template v-for="(movie, index) in browseItems" :key="movie.id">
+                <!-- Large Horizontal Featured Card (index % 9 === 0) -->
+                <div v-if="index % 9 === 0" class="col-span-2 sm:col-span-2 md:col-span-4 lg:col-span-2 relative overflow-hidden rounded-[2rem] bg-[#1a1a1c] p-2 flex flex-col group cursor-pointer ring-1 ring-white/10 hover:ring-white/30 transition-all duration-300 transform-gpu aspect-[4/3] md:aspect-[8/3] lg:aspect-auto lg:h-full" style="content-visibility: auto; contain-intrinsic-size: auto 300px;" @click="openInfo(movie)">
+                  
+                  <div class="skeleton-overlay absolute inset-2 bg-[#27272a]/60 animate-pulse rounded-[1.5rem] transition-opacity duration-500 z-0 opacity-100 group-hover:opacity-0"></div>
+                  
+                  <img 
+                    :src="getImageUrl(movie.backdrop_path || movie.poster_path, 'w780')" 
+                    loading="lazy"
+                    decoding="async"
+                    class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out z-0 rounded-[1.5rem]" 
+                    style="opacity: 0;"  
+                    @load="handleImageLoad"
+                  />
+                  
+                  <!-- The Glass Mask -->
+                  <div class="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/95 via-black/40 to-transparent z-10 pointer-events-none rounded-b-[1.5rem]"></div>
+                  
+                  <!-- The Drawer -->
+                  <div class="relative z-20 mt-auto p-4 md:p-6 flex flex-col justify-end translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out">
                     <img 
                       v-if="movie.logo_path" 
-                      :src="getImageUrl(movie.logo_path, 'w300')" 
-                      class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" 
+                      :src="getImageUrl(movie.logo_path, 'w500')" 
+                      class="max-w-[200px] max-h-[70px] object-contain drop-shadow-2xl mb-2 origin-left scale-95 group-hover:scale-100 transition-transform duration-500" 
                     />
-
-                    <h4 
+                    <h3 
                       v-else 
-                      class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center"
+                      class="text-xl md:text-3xl font-black uppercase tracking-tighter text-white drop-shadow-lg mb-2 line-clamp-2"
                     >
                       {{ movie.title || movie.name }}
-                    </h4>
-
+                    </h3>
+                    <p class="text-[11px] md:text-xs text-gray-300/90 font-medium leading-relaxed line-clamp-2 md:line-clamp-3 mb-4 max-w-md drop-shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">{{ movie.overview }}</p>
+                    <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-200">
+                       <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-5 py-2 md:px-6 md:py-2.5 text-white font-bold text-xs md:text-sm transition-colors shadow-lg pointer-events-auto flex items-center gap-2" @click.stop="openPlayer(movie)">
+                          <Lock v-if="!isLoggedIn" class="w-4 h-4 md:w-5 md:h-5" />
+                          <Play v-else class="w-4 h-4 md:w-5 md:h-5 fill-current" />
+                          <span>{{ !isLoggedIn ? 'Locked' : 'Play' }}</span>
+                       </button>
+                    </div>
+                  </div>
+                  
+                  <!-- Top Right Buttons -->
+                  <div class="absolute top-4 right-4 z-20 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <button @click.stop="openInfo(movie)" class="p-1.5 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
+                      <Info class="w-3 h-3 text-white" />
+                    </button>
+                    <button @click.stop="handleWatchlistToggle(movie)" class="p-1.5 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20">
+                      <Check v-if="watchlist.has(movie.id)" class="w-3 h-3 text-green-400" />
+                      <Bookmark v-else class="w-3 h-3 text-white" />
+                    </button>
                   </div>
                 </div>
 
-                <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                 <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-4 h-4 text-white" /></button>
-                  <button @click.stop="handleWatchlistToggle(movie)" class="p-2 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20">
-                    <Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" />
-                    <Bookmark v-else class="w-4 h-4 text-white" />
-                  </button>
-                </div>
+                <!-- Vertical Card with Expanding Content (Zero Reflow GPU Optimized Illusion) -->
+                <div v-else class="col-span-1 relative overflow-hidden rounded-[2rem] bg-[#1a1a1c] p-2 flex flex-col group cursor-pointer ring-1 ring-white/10 hover:ring-white/30 transition-colors duration-300 aspect-[2/3] hover:shadow-[0_0_60px_rgba(59,130,246,0.15)] transform-gpu" style="content-visibility: auto; contain-intrinsic-size: auto 300px;" @click="openInfo(movie)">
+                  
+                  <!-- Inner Container to clip the image and drawer strictly inside the padding -->
+                  <div class="relative w-full h-full rounded-[1.5rem] overflow-hidden transform-gpu">
+                    
+                    <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0 opacity-100 group-hover:opacity-0"></div>
+                    
+                    <!-- Image scales purely via GPU (zero reflow) -->
+                    <img 
+                      :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" 
+                      loading="lazy"
+                      decoding="async"
+                      class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out z-0 will-change-transform" 
+                      style="opacity: 0;"  
+                      @load="handleImageLoad"
+                    />
+                    
+                    <!-- Glass blur mask at the bottom before hover (Fade only, no translate) -->
+                    <div class="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10 group-hover:opacity-0 transition-opacity duration-500 pointer-events-none will-change-opacity"></div>
 
-                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-300">
-                   <div class="w-12 h-12 bg-white/25 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform" @click.stop="openPlayer(movie)">
-                      <Play class="w-5 h-5 text-white fill-current" />
-                   </div>
+                    <!-- The Drawer (Transparent gradient sliding up OVER the image) -->
+                    <div class="absolute inset-x-0 bottom-0 p-2 pt-16 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/70 to-transparent z-20 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-500 ease-out will-change-transform">
+                      <img 
+                        v-if="movie.logo_path" 
+                        :src="getImageUrl(movie.logo_path, 'w300')" 
+                        class="max-w-[120px] max-h-[35px] object-contain drop-shadow-lg opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 origin-left" 
+                      />
+                      <h4 
+                        v-else 
+                        class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 text-white opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500"
+                      >
+                        {{ movie.title || movie.name }}
+                      </h4>
+                      
+                      <div class="flex justify-between items-end mt-2 mb-1 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 delay-100">
+                         <span class="text-xs font-bold text-gray-300">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) || '' }}</span>
+                         <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-3 py-1.5 text-white font-bold text-[11px] transition-colors shadow-md pointer-events-auto flex items-center gap-1.5" @click.stop="openPlayer(movie)">
+                            <Lock v-if="!isLoggedIn" class="w-3 h-3" />
+                            <Play v-else class="w-3 h-3 fill-current" />
+                            <span>{{ !isLoggedIn ? 'Locked' : 'Play' }}</span>
+                         </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <!-- Top Right Action Buttons -->
+                  <div class="absolute top-4 right-4 z-20 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <button @click.stop="openInfo(movie)" class="p-1.5 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
+                      <Info class="w-3 h-3 text-white" />
+                    </button>
+                    <button @click.stop="handleWatchlistToggle(movie)" class="p-1.5 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20">
+                      <Check v-if="watchlist.has(movie.id)" class="w-3 h-3 text-green-400" />
+                      <Bookmark v-else class="w-3 h-3 text-white" />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              </template>
             </div>
 
             <div v-if="isBrowseLoading || isFetchingMore" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 mt-6">
               <Skeleton v-for="i in 12" :key="i" :class="['rounded-2xl bg-white/5 animate-pulse', i % 9 === 1 ? 'col-span-2 md:col-span-4 lg:col-span-2 aspect-video' : 'col-span-1 aspect-[2/3]']" />
+            </div>
+
+            <!-- Members Only Lock Screen (Bottom) -->
+            <div v-if="!isLoggedIn" class="relative z-30 mt-12 py-20 flex flex-col items-center justify-center text-center px-4 space-y-6 border-t border-white/10 bg-gradient-to-t from-black to-transparent">
+              <div class="absolute inset-0 bg-[#0a0a0a]/90 -z-10"></div>
+              <div class="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mb-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              </div>
+              <h2 class="text-2xl md:text-4xl font-black tracking-tight text-white">Members Only Area</h2>
+              <p class="text-gray-400 text-base md:text-lg max-w-xl">
+                Please log in to explore thousands of movies and TV series.
+              </p>
+              <Button @click="isLoginOpen = true" class="mt-4 bg-blue-600 hover:bg-blue-500 text-white font-bold px-8 h-12 rounded-full shadow-lg shadow-blue-500/20 transition-all hover:scale-105">
+                Sign In to Continue
+              </Button>
             </div>
         </section>
       </main>
@@ -2904,12 +3020,13 @@ onUnmounted(() => {
     <Transition name="fade">
       <div 
         v-if="selectedStudio" 
-        class="fixed inset-0 z-[500] bg-black/80 backdrop-blur-xl flex justify-center items-center p-4 md:p-8"
+        class="fixed inset-0 z-[500] bg-black/40 flex justify-center items-center p-4 md:p-8"
         @click.self="selectedStudio = null"
       >
-        <div class="w-full max-w-6xl max-h-[90vh] bg-[#09090b]/95 border border-white/20 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
-          <!-- Modal Header -->
-          <div class="p-6 md:p-8 border-b border-white/15 flex justify-between items-center bg-white/5 backdrop-blur-md">
+        <div class="w-full max-w-6xl max-h-[90vh] rounded-[2rem] shadow-2xl relative overflow-hidden flex flex-col border border-white/10 bg-[#121215]">
+          <div class="w-full flex flex-col relative z-10 h-full overflow-hidden">
+            <!-- Modal Header -->
+            <div class="p-6 md:p-8 border-b border-white/10 flex justify-between items-center bg-transparent">
             <div>
               <div class="flex items-center gap-4">
                 <div class="h-10 md:h-12 px-3 py-1.5 bg-[#f5f5f4] rounded-xl flex items-center justify-center border border-white/20 shadow-md">
@@ -2973,9 +3090,10 @@ onUnmounted(() => {
                 </div>
 
                 <!-- Hover Center Play Button -->
-                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none">
+                <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-30">
                   <div class="w-12 h-12 md:w-14 md:h-14 bg-white/25 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
-                    <Play class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" />
+                    <Lock v-if="!isLoggedIn" class="w-5 h-5 md:w-6 md:h-6 text-white" />
+                    <Play v-else class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" />
                   </div>
                 </div>
 
@@ -2991,6 +3109,7 @@ onUnmounted(() => {
                 </div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
