@@ -13,7 +13,6 @@ from core.views import (
 )
 
 urlpatterns = [
-    path("", lambda request: redirect("/admin/")),
     path('admin/', admin.site.urls),
 
     # Auth endpoints (session-based)
