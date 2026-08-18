@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import Lenis from 'lenis';
 
-// Instance khusus untuk request ke backend Django kita (pakai session cookie)
+// Instance khusus untuk request ke backend Django kita
 const api = axios.create({
-  baseURL: 'http://localhost:1234',
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:1234',
   withCredentials: true,  // kirim session cookie di setiap request ke backend
 });
 
@@ -390,9 +390,25 @@ const tvCategoriesList = ref([]);
 const genresList = ref([]);
 const filters = ref({
   genre: '',
+  country: '',
   year: '',
   sortBy: 'popularity.desc'
 });
+
+const availableCountries = [
+  { code: 'US', name: '🇺🇸 United States' },
+  { code: 'KR', name: '🇰🇷 South Korea' },
+  { code: 'JP', name: '🇯🇵 Japan' },
+  { code: 'ID', name: '🇮🇩 Indonesia' },
+  { code: 'GB', name: '🇬🇧 United Kingdom' },
+  { code: 'CN', name: '🇨🇳 China' },
+  { code: 'HK', name: '🇭🇰 Hong Kong' },
+  { code: 'TH', name: '🇹🇭 Thailand' },
+  { code: 'FR', name: '🇫🇷 France' },
+  { code: 'DE', name: '🇩🇪 Germany' },
+  { code: 'IN', name: '🇮🇳 India' },
+  { code: 'ES', name: '🇪🇸 Spain' },
+];
 
 const availableYears = computed(() => {
   const yrs = [];
@@ -735,7 +751,7 @@ const changeView = async (viewType) => {
     return;
   }
   
-  filters.value = { genre: '', year: '', sortBy: 'popularity.desc' };
+  filters.value = { genre: '', country: '', year: '', sortBy: 'popularity.desc' };
   isBrowseLoading.value = true;
   browseItems.value = [];
   browsePage.value = 1;
@@ -787,6 +803,7 @@ const loadMoreBrowseItems = async () => {
     let endpoint = `${BASE_URL}/discover/${type}?api_key=${API_KEY}&page=${browsePage.value}&sort_by=${filters.value.sortBy}`;
     if (filters.value.genre) endpoint += `&with_genres=${filters.value.genre}`;
     if (filters.value.year) endpoint += `&${yearParam}=${filters.value.year}`;
+    if (filters.value.country) endpoint += `&with_origin_country=${filters.value.country}`;
 
     const res = await axios.get(endpoint);
     
@@ -2664,6 +2681,13 @@ onUnmounted(() => {
                    <select v-model="filters.genre" @change="applyFilters" class="bg-transparent text-sm text-white font-medium outline-none cursor-pointer py-2 appearance-none">
                      <option value="" class="bg-[#18181b]">All Genres</option>
                      <option v-for="g in genresList" :key="g.id" :value="g.id" class="bg-[#18181b]">{{g.name}}</option>
+                   </select>
+                 </div>
+
+                 <div class="flex items-center bg-white/10 border border-white/15 rounded-xl px-3 py-1">
+                   <select v-model="filters.country" @change="applyFilters" class="bg-transparent text-sm text-white font-medium outline-none cursor-pointer py-2 appearance-none">
+                     <option value="" class="bg-[#18181b]">All Countries</option>
+                     <option v-for="c in availableCountries" :key="c.code" :value="c.code" class="bg-[#18181b]">{{ c.name }}</option>
                    </select>
                  </div>
 

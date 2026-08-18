@@ -14,6 +14,7 @@ export default defineConfig({
     }
   },
   server: {
+    host: '0.0.0.0',
     headers: {
       // Permissions-Policy: matikan fitur yang dipakai popup/tracker
       'Permissions-Policy': [
