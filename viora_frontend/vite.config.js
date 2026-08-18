@@ -27,5 +27,25 @@ export default defineConfig({
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'strict-origin-when-cross-origin',
     }
+  },
+  build: {
+    target: 'esnext',
+    cssCodeSplit: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('vue')) return 'vendor-vue';
+            if (id.includes('axios')) return 'vendor-axios';
+            if (id.includes('lucide')) return 'vendor-icons';
+            return 'vendor-core';
+          }
+        }
+      }
+    }
+  },
+  esbuild: {
+    drop: ['console', 'debugger'],
   }
 })

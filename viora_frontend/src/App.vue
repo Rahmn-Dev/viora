@@ -11,8 +11,15 @@ import Lenis from 'lenis';
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || 'http://localhost:1234',
   withCredentials: true,  // kirim session cookie di setiap request ke backend
-  xsrfCookieName: 'csrftoken',
-  xsrfHeaderName: 'X-CSRFToken',
+});
+
+// Axios default tidak mengirim CSRF token beda port (cross-origin), jadi kita manual:
+api.interceptors.request.use(config => {
+  const match = document.cookie.match(/(^|;\\s*)csrftoken=([^;]*)/);
+  if (match) {
+    config.headers['X-CSRFToken'] = match[2];
+  }
+  return config;
 });
 
 // Jika session kedaluwarsa (401), logout otomatis
@@ -1456,11 +1463,11 @@ onUnmounted(() => {
           
 
           <div class="relative w-full aspect-video md:aspect-[21/9] bg-black">
-            <img v-if="selectedMovieInfo?.backdrop_path || selectedMovieInfo?.poster_path" :src="getImageUrl(selectedMovieInfo.backdrop_path || selectedMovieInfo.poster_path, selectedMovieInfo.backdrop_path ? 'original' : 'w500')" :class="selectedMovieInfo.backdrop_path ? 'object-cover' : 'object-contain'" class="w-full h-full opacity-80" />
+            <img loading="lazy" decoding="async" v-if="selectedMovieInfo?.backdrop_path || selectedMovieInfo?.poster_path" :src="getImageUrl(selectedMovieInfo.backdrop_path || selectedMovieInfo.poster_path, selectedMovieInfo.backdrop_path ? 'original' : 'w500')" :class="selectedMovieInfo.backdrop_path ? 'object-cover' : 'object-contain'" class="w-full h-full opacity-80" />
             <div class="absolute inset-0 bg-gradient-to-t from-[#18181b] via-[#18181b]/30 to-transparent"></div>
 
             <div class="absolute bottom-8 left-8 right-8">
-              <img v-if="selectedMovieInfo?.logo_path" :src="getImageUrl(selectedMovieInfo.logo_path, 'w500')" class="max-w-[250px] md:max-w-[400px] max-h-[100px] object-contain drop-shadow-2xl mb-6 origin-left" />
+              <img loading="lazy" decoding="async" v-if="selectedMovieInfo?.logo_path" :src="getImageUrl(selectedMovieInfo.logo_path, 'w500')" class="max-w-[250px] md:max-w-[400px] max-h-[100px] object-contain drop-shadow-2xl mb-6 origin-left" />
               <h2 v-else class="text-4xl md:text-5xl font-black  uppercase tracking-tighter drop-shadow-2xl mb-4 text-white">
                 {{ selectedMovieInfo?.title || selectedMovieInfo?.name }}
               </h2>
@@ -1527,7 +1534,7 @@ onUnmounted(() => {
                     <div class="flex gap-4 overflow-x-auto pb-2">
                       <div v-for="season in selectedMovieInfo.seasons.map(s => ({ ...s, media_type: 'tv', season: s.season_number ?? 1, episode: 1, showId:selectedMovieInfo.id}))" :key="season.id" class="flex-shrink-0 w-32 cursor-pointer hover:scale-105 transition-transform duration-300" @click="openPlayer(season)">
                         <div class="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg">
-                          <img :src="getImageUrl(season.poster_path, 'w300')" class="w-full h-full object-cover" :alt="season.name" />
+                          <img loading="lazy" decoding="async" :src="getImageUrl(season.poster_path, 'w300')" class="w-full h-full object-cover" :alt="season.name" />
                           <div class="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-1 text-center">{{ season.episode_count }} eps</div>
                         </div>
                         <h3 class="text-xs font-semibold mt-1 line-clamp-2 text-white"> {{ season.season_number }}</h3>
@@ -1546,7 +1553,7 @@ onUnmounted(() => {
               <div class="flex gap-4 overflow-x-auto py-2">
                 <div v-for="actor in selectedMovieInfo.cast" :key="actor.id" class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow hover:scale-105 hover:shadow-lg bg-white/10  border border-white/20 rounded-2xl p-1">
                   <div class="w-16 h-16 rounded-full overflow-hidden bg-gray-800 flex-shrink-0">
-                    <img :src="getImageUrl(actor.profile_path, 'w185')" :alt="actor.name" class="w-full h-full object-cover" />
+                    <img loading="lazy" decoding="async" :src="getImageUrl(actor.profile_path, 'w185')" :alt="actor.name" class="w-full h-full object-cover" />
                   </div>
                   <div class="flex-1">
                     <span class="text-gray-300 text-sm font-medium leading-snug break-words">{{ actor.name }}</span>
@@ -1565,7 +1572,7 @@ onUnmounted(() => {
                 <template v-for="company in selectedMovieInfo.production_companies" :key="company.id || company.name">
                   <div v-if="company.logo_path" class="flex items-center gap-3 w-45 flex-shrink-0 cursor-pointer transform transition-transform transition-shadow hover:scale-105 hover:shadow-lg bg-white border border-white/20 rounded-2xl p-5">
                     <div >
-                      <img :src="`https://image.tmdb.org/t/p/w185${company.logo_path}`" :alt="company.name" />
+                      <img loading="lazy" decoding="async" :src="`https://image.tmdb.org/t/p/w185${company.logo_path}`" :alt="company.name" />
                     </div>
                   </div>
                 </template>
@@ -1582,7 +1589,7 @@ onUnmounted(() => {
             <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div v-for="sim in similarMovies" :key="sim.id" class="bg-[#2b2b30]/50 rounded-xl overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-300 shadow-lg" @click="openInfo(sim)">
                 <div class="relative aspect-video">
-                  <img :src="getImageUrl(sim.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80" />
+                  <img loading="lazy" decoding="async" :src="getImageUrl(sim.backdrop_path, 'w500')" class="w-full h-full object-cover opacity-80" />
                   <div class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/40 transition-opacity">
                     <Play class="w-10 h-10 text-white fill-current drop-shadow-lg" @click.stop="openPlayer(sim)" />
                   </div>
@@ -1592,7 +1599,7 @@ onUnmounted(() => {
                 </div>
                 <div class="p-3">
                   <div class="flex justify-between items-start mb-1">
-                    <img v-if="sim.logo_path" :src="getImageUrl(sim.logo_path, 'w300')" class="max-h-[30px] max-w-[120px] object-contain drop-shadow-md origin-left flex-1" />
+                    <img loading="lazy" decoding="async" v-if="sim.logo_path" :src="getImageUrl(sim.logo_path, 'w300')" class="max-h-[30px] max-w-[120px] object-contain drop-shadow-md origin-left flex-1" />
                     <h4 v-else class="font-bold text-sm line-clamp-1 flex-1 text-white">{{ sim.title || sim.name }}</h4>
                     
                     <button @click.stop="handleWatchlistToggle(sim)" class="ml-2 border border-white/30 rounded-full p-1 hover:bg-white/10 transition">
@@ -1662,7 +1669,7 @@ onUnmounted(() => {
           class="!fixed top-4 right-6 md:top-6 md:right-8 z-[350] text-right hidden sm:block transition-opacity duration-500"
           :class="isPlayerControlsVisible || isEpisodesSidebarOpen || isPlayerPaused ? 'opacity-100' : 'opacity-0'"
         >
-          <img 
+          <img loading="lazy" decoding="async" 
             v-if="currentMedia?.logo_path" 
             :src="getImageUrl(currentMedia.logo_path, 'w300')" 
             class="max-h-[35px] md:max-h-[45px] max-w-[200px] md:max-w-[300px] object-contain drop-shadow-lg" 
@@ -1761,7 +1768,7 @@ onUnmounted(() => {
                >
                  <!-- Thumbnail -->
                  <div class="w-28 h-16 bg-black/80 rounded-lg overflow-hidden relative flex-shrink-0 shadow-md border border-white/10">
-                   <img v-if="ep.still_path" :src="getImageUrl(ep.still_path, 'w300')" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90" />
+                   <img loading="lazy" decoding="async" v-if="ep.still_path" :src="getImageUrl(ep.still_path, 'w300')" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90" />
                    <div class="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-black/20 transition-colors">
                      <Play class="w-6 h-6 text-white drop-shadow-md" :class="currentPlayState.episode === ep.episode_number ? 'text-blue-400 fill-current' : ''" />
                    </div>
@@ -1867,7 +1874,7 @@ onUnmounted(() => {
                     
                     <div class="skeleton-overlay absolute inset-0 bg-white/5 animate-pulse z-0"></div>
                     
-                    <img :src="movie.backdrop_path || movie.poster_path ? getImageUrl(movie.backdrop_path || movie.poster_path, 'w780') : 'https://via.placeholder.com/780x438?text=No+Image'" 
+                    <img loading="lazy" decoding="async" :src="movie.backdrop_path || movie.poster_path ? getImageUrl(movie.backdrop_path || movie.poster_path, 'w780') : 'https://via.placeholder.com/780x438?text=No+Image'" 
                          class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
                          style="opacity: 0; transform: scale(1.05);" 
                          @load="handleImageLoad" />
@@ -1877,7 +1884,7 @@ onUnmounted(() => {
                     </div>
 
                     <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-5 flex flex-col justify-end items-start pointer-events-none">
-                      <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg mb-1 origin-bottom-left" />
+                      <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg mb-1 origin-bottom-left" />
                       <h4 v-else class="text-sm font-black uppercase tracking-tighter line-clamp-1 drop-shadow-md text-white mb-1">{{ movie.title || movie.name }}</h4>
                     </div>
 
@@ -1916,10 +1923,10 @@ onUnmounted(() => {
                 <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
                   <div v-for="movie in filteredWatchlistMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none rounded-3xl overflow-hidden bg-black/40 transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer border border-white/10 aspect-[2/3] col-span-1 shadow-2xl">
                     <div class="skeleton-overlay absolute inset-0 bg-white/5 animate-pulse z-0"></div>
-                    <img :src="movie.poster_path || movie.backdrop_path ? getImageUrl(movie.poster_path || movie.backdrop_path, 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'" class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" style="opacity: 0; transform: scale(1.05);" @load="handleImageLoad" />
+                    <img loading="lazy" decoding="async" :src="movie.poster_path || movie.backdrop_path ? getImageUrl(movie.poster_path || movie.backdrop_path, 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'" class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" style="opacity: 0; transform: scale(1.05);" @load="handleImageLoad" />
                     
                     <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent p-4 flex flex-col justify-end items-center pointer-events-none">
-                      <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg" />
+                      <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[120px] max-h-[40px] object-contain drop-shadow-lg" />
                       <h4 v-else class="text-sm font-black uppercase tracking-tighter line-clamp-2 drop-shadow-md text-center text-white">{{ movie.title || movie.name }}</h4>
                     </div>
                     
@@ -2039,7 +2046,7 @@ onUnmounted(() => {
                     <!-- Content Overlay -->
                     <div class="absolute z-20 inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent p-4 flex flex-col justify-end items-start pointer-events-none">
                       <!-- Title or Logo -->
-                      <img 
+                      <img loading="lazy" decoding="async" 
                         v-if="item.logo_path" 
                         :src="getImageUrl(item.logo_path, 'w300')" 
                         class="max-w-[130px] max-h-[38px] object-contain drop-shadow-md mb-1.5 origin-bottom-left" 
@@ -2383,14 +2390,14 @@ onUnmounted(() => {
       <section class="relative w-full h-[90vh] lg:h-[100vh] overflow-hidden bg-black">
         <transition-group name="hero-fade">
           <div v-for="(movie, index) in activeHeroMovies" :key="movie.id" v-show="index === currentHeroIndex" class="absolute inset-0">
-            <img :src="getImageUrl(movie.backdrop_path, 'original')" class="w-full h-full object-cover opacity-60 scale-100 transition-transform duration-[10s]" :class="index === currentHeroIndex ? 'scale-110' : 'scale-100'" />
+            <img loading="lazy" decoding="async" :src="getImageUrl(movie.backdrop_path, 'original')" class="w-full h-full object-cover opacity-60 scale-100 transition-transform duration-[10s]" :class="index === currentHeroIndex ? 'scale-110' : 'scale-100'" />
             
             <div class="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#0b1220]/1 to-transparent"></div>
             <div class="absolute inset-0 bg-gradient-to-r from-[#09090b] via-[#0b1220]/1 to-transparent"></div>
 
             <div class="absolute bottom-[15%] left-6 lg:left-12 max-w-2xl space-y-8 z-10">
               <div class="space-y-6">
-                <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-lg" />
+                <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-lg" />
                 <h2 v-else class="text-5xl lg:text-7xl font-black uppercase  tracking-tighter">{{ movie.title || movie.name }}</h2>
               </div>
 
@@ -2440,7 +2447,7 @@ onUnmounted(() => {
               />
               <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
                 <div class="mb-2">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
+                  <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                   <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
                 </div>
                 <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
@@ -2500,7 +2507,7 @@ onUnmounted(() => {
               
               <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 md:p-8 flex flex-col justify-end" :class="category.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/90 via-black/30'">
                 <div class="mb-1.5 flex items-center gap-3 flex-wrap" :class="category.layout === 'portrait' ? 'justify-center' : ''">
-                  <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[category.layout === 'hero-card' ? 'max-w-[180px] md:max-w-[280px] max-h-[55px] md:max-h-[75px]' : category.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-lg transition-transform group-hover:scale-105 origin-left" />
+                  <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[category.layout === 'hero-card' ? 'max-w-[180px] md:max-w-[280px] max-h-[55px] md:max-h-[75px]' : category.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-lg transition-transform group-hover:scale-105 origin-left" />
                   <h4 v-else :class="[category.layout === 'hero-card' ? 'text-xl md:text-3xl font-black' : category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1']" class="font-black uppercase tracking-tighter drop-shadow-md text-white">{{ movie.title || movie.name }}</h4>
 
                   <!-- Year Badge ONLY for hero-card layout next to title/logo -->
@@ -2635,7 +2642,7 @@ onUnmounted(() => {
                     <!-- Overlay Gradient & Info -->
                     <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 flex flex-col justify-end" :class="kidCat.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/90 via-black/30'">
                       <div class="mb-1 flex items-center gap-2 flex-wrap" :class="kidCat.layout === 'portrait' ? 'justify-center' : ''">
-                        <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[kidCat.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-md transition-transform group-hover:scale-105 origin-left" />
+                        <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[kidCat.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-md transition-transform group-hover:scale-105 origin-left" />
                         <h4 v-else :class="[kidCat.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1']" class="font-black uppercase tracking-tighter drop-shadow-md text-white">{{ movie.title || movie.name }}</h4>
                       </div>
                     </div>
@@ -2770,7 +2777,7 @@ onUnmounted(() => {
                   
                   <!-- The Drawer -->
                   <div class="relative z-20 mt-auto p-4 md:p-6 flex flex-col justify-end translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out">
-                    <img 
+                    <img loading="lazy" decoding="async" 
                       v-if="movie.logo_path" 
                       :src="getImageUrl(movie.logo_path, 'w500')" 
                       class="max-w-[200px] max-h-[70px] object-contain drop-shadow-2xl mb-2 origin-left scale-95 group-hover:scale-100 transition-transform duration-500" 
@@ -2826,7 +2833,7 @@ onUnmounted(() => {
 
                     <!-- The Drawer (Transparent gradient sliding up OVER the image) -->
                     <div class="absolute inset-x-0 bottom-0 p-2 pt-16 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/70 to-transparent z-20 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-500 ease-out will-change-transform">
-                      <img 
+                      <img loading="lazy" decoding="async" 
                         v-if="movie.logo_path" 
                         :src="getImageUrl(movie.logo_path, 'w300')" 
                         class="max-w-[120px] max-h-[35px] object-contain drop-shadow-lg opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 origin-left" 
@@ -3030,7 +3037,7 @@ onUnmounted(() => {
             <div>
               <div class="flex items-center gap-4">
                 <div class="h-10 md:h-12 px-3 py-1.5 bg-[#f5f5f4] rounded-xl flex items-center justify-center border border-white/20 shadow-md">
-                  <img 
+                  <img loading="lazy" decoding="async" 
                     :src="selectedStudio.logo_path ? getImageUrl(selectedStudio.logo_path, 'w300') : selectedStudio.fallback" 
                     :alt="selectedStudio.name"
                     class="max-h-8 md:max-h-9 w-auto object-contain"
@@ -3078,7 +3085,7 @@ onUnmounted(() => {
                 <!-- Bottom Content Overlay -->
                 <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent p-4 md:p-5 flex flex-col justify-end">
                   <div class="mb-1">
-                    <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
+                    <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
                     <h4 v-else class="text-sm md:text-base font-black uppercase tracking-tight line-clamp-1 text-white">{{ movie.title || movie.name }}</h4>
                   </div>
                   

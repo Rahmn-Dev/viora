@@ -1,6 +1,6 @@
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
@@ -53,6 +53,7 @@ def api_logout(request):
 
 
 @api_view(['GET'])
+@ensure_csrf_cookie
 @permission_classes([AllowAny])
 def api_me(request):
     """Cek siapa yang sedang login berdasarkan session cookie."""
