@@ -1,5 +1,7 @@
 from django.contrib import admin
 from django.urls import path
+from django.shortcuts import redirect
+
 from core.views import (
     UpdateWatchHistoryView,
     toggle_watchlist,
@@ -11,6 +13,7 @@ from core.views import (
 )
 
 urlpatterns = [
+    path("", lambda request: redirect("/admin/")),
     path('admin/', admin.site.urls),
 
     # Auth endpoints (session-based)
