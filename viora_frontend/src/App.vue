@@ -572,13 +572,13 @@ const BASE_URL = 'https://api.themoviedb.org/3';
 
 const getImageUrl = (path, width = 'w500') => {
   if (!path) return 'https://via.placeholder.com/300x450?text=No+Image';
-  const tmdbUrl = `https://image.tmdb.org/t/p/${width}${path}`;
   
-  if (width === 'original' || width === 'w780') {
-    return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=80&n=-1`;
+  if (width === 'original') {
+    return `https://image.tmdb.org/t/p/original${path}`;
   }
   
-  return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=60&w=300&n=-1`;
+  const tmdbUrl = `https://image.tmdb.org/t/p/${width}${path}`;
+  return `https://wsrv.nl/?url=${encodeURIComponent(tmdbUrl)}&output=webp&q=85&n=-1`;
 };
 
 const logoCache = new Map();
