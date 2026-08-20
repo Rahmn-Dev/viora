@@ -1516,7 +1516,7 @@ onUnmounted(() => {
                         : 'Unknown'
                   }}
                 </span>
-                <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">HD</span>
+                <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white font-medium">FHD</span>
                 <span class="border border-gray-600 px-1.5 py-0.5 rounded text-white">CC</span>
               </div>
               <p class="text-[15px] md:text-base leading-relaxed text-gray-200">{{ selectedMovieInfo?.overview || 'No overview available.' }}</p>
