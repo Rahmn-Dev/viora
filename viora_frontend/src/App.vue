@@ -316,6 +316,11 @@ const loginError = ref('');
 const glassMode = ref(localStorage.getItem('viora_glass_mode') || 'edge');
 
 const setGlassMode = (mode) => {
+  if (!isLoggedIn.value && mode === 'full') {
+    isProfileOpen.value = false;
+    isLoginOpen.value = true;
+    return;
+  }
   glassMode.value = mode;
   localStorage.setItem('viora_glass_mode', mode);
 };
@@ -372,6 +377,11 @@ const destroyLenis = () => {
 };
 
 const setSmoothScroll = (enabled) => {
+  if (!isLoggedIn.value && enabled) {
+    isProfileOpen.value = false;
+    isLoginOpen.value = true;
+    return;
+  }
   isSmoothScrollEnabled.value = enabled;
   localStorage.setItem('viora_smooth_scroll', enabled ? 'true' : 'false');
   initLenis();
@@ -383,12 +393,72 @@ const isSwitchingUI = ref(false);
 const modernTheme = ref(localStorage.getItem('viora_modern_theme') || 'cosmic');
 
 const setModernTheme = (themeKey) => {
+  if (!isLoggedIn.value && themeKey !== 'cosmic' && themeKey !== 'sand') {
+    isProfileOpen.value = false;
+    isLoginOpen.value = true;
+    return;
+  }
   modernTheme.value = themeKey;
   localStorage.setItem('viora_modern_theme', themeKey);
 };
 
+// --- GUEST MODERN STACK TRIAL STATE (90s limit for unauthenticated users) ---
+const guestModernTimer = ref(null);
+const guestModernTimeLeft = ref(90);
+const isGuestModernTrialActive = ref(false);
+const isTrialEndModalOpen = ref(false);
+
+const formatTimeLeft = computed(() => {
+  const m = Math.floor(guestModernTimeLeft.value / 60);
+  const s = guestModernTimeLeft.value % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
+});
+
+const startGuestModernTrial = () => {
+  stopGuestModernTrial(false);
+  guestModernTimeLeft.value = 90; // 90 seconds trial (1.5 minutes)
+  isGuestModernTrialActive.value = true;
+  executeUIChange('modern');
+
+  guestModernTimer.value = setInterval(() => {
+    if (guestModernTimeLeft.value > 0) {
+      guestModernTimeLeft.value -= 1;
+    } else {
+      stopGuestModernTrial(true);
+    }
+  }, 1000);
+};
+
+const stopGuestModernTrial = (expired = false) => {
+  if (guestModernTimer.value) {
+    clearInterval(guestModernTimer.value);
+    guestModernTimer.value = null;
+  }
+  isGuestModernTrialActive.value = false;
+  
+  if (expired) {
+    executeUIChange('classic');
+    isTrialEndModalOpen.value = true;
+  }
+};
+
 const changeUIMode = (mode) => {
   if (uiMode.value === mode) return;
+
+  // If unauthenticated guest tries to switch to Modern Stack
+  if (!isLoggedIn.value && mode === 'modern') {
+    startGuestModernTrial();
+    return;
+  }
+
+  // If guest manually switches back to Classic while trial is active
+  if (isGuestModernTrialActive.value) {
+    stopGuestModernTrial(false);
+  }
+  executeUIChange(mode);
+};
+
+const executeUIChange = (mode) => {
   isSwitchingUI.value = true;
   setTimeout(() => {
     uiMode.value = mode;
@@ -1130,10 +1200,23 @@ const handleLogin = async () => {
     isLoggedIn.value = true;
     currentUser.value = { username: response.data.username, email: response.data.email };
     localStorage.setItem('viora_auth_user', response.data.username);
-    await fetchUserData();
-    await fetchWatchlist();
     isLoginOpen.value = false;
     loginData.value = { username: '', password: '' };
+
+    // Clear guest trial timer if active
+    if (guestModernTimer.value) clearInterval(guestModernTimer.value);
+    guestModernTimer.value = null;
+    isGuestModernTrialActive.value = false;
+
+    // Automatically switch to Modern Stack as default for logged in users
+    executeUIChange('modern');
+    await fetchUserData();
+    await fetchWatchlist();
+    
+    setTimeout(() => {
+      isSwitchingUI.value = false;
+    }, 1200);
+
   } catch (error) {
     console.error(error);
     loginError.value = error.response?.data?.detail || 'Login gagal. Cek username dan password.';
@@ -1142,6 +1225,7 @@ const handleLogin = async () => {
 
 
 const handleLogout = async () => {
+  stopGuestModernTrial(false);
   try { await api.post('/api/logout/'); } catch (e) {}
   isLoggedIn.value = false;
   currentUser.value = { username: '' };
@@ -1152,10 +1236,12 @@ const handleLogout = async () => {
   watchlist.value.clear();
   localStorage.removeItem('viora_auth_user');
   
-  // Kick user out of the player and return to home instantly
   if (isPlayerOpen.value) {
     closePlayer();
   }
+
+  // Switch guest back to default Classic UI mode
+  executeUIChange('classic');
   currentView.value = 'home';
 };
 
@@ -1167,6 +1253,7 @@ const checkLoginStatus = async () => {
     isLoggedIn.value = true;
     currentUser.value = { username: res.data.username, email: res.data.email };
     localStorage.setItem('viora_auth_user', res.data.username);
+    uiMode.value = localStorage.getItem('viora_ui_mode') || 'modern';
     await fetchUserData();
     await fetchWatchlist();
   } catch (e) {
@@ -1174,6 +1261,7 @@ const checkLoginStatus = async () => {
     isLoggedIn.value = false;
     currentUser.value = { username: '' };
     localStorage.removeItem('viora_auth_user');
+    uiMode.value = 'classic';
   }
 };
 
@@ -1984,11 +2072,17 @@ onUnmounted(() => {
           </div>
         </aside>
 
-        <div class="liquidGlass-wrapper shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] !rounded-[3rem] relative w-full max-w-6xl h-[80vh] flex flex-col z-10" @click.stop>
-          <div class="liquidGlass-effect !rounded-[3rem]"></div>
-          <div class="liquidGlass-tint !rounded-[3rem]"></div>
-          <div class="liquidGlass-shine !rounded-[3rem]"></div>
-          <div class="liquidGlass-text relative w-full h-full flex flex-col z-10 overflow-hidden">
+        <div 
+          :class="[
+            'shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] !rounded-[3rem] relative w-full max-w-6xl h-[80vh] flex flex-col z-10 overflow-hidden',
+            uiMode === 'modern' ? 'bg-black/40 backdrop-blur-3xl border border-white/20' : 'liquidGlass-wrapper'
+          ]" 
+          @click.stop
+        >
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-effect !rounded-[3rem]"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-tint !rounded-[3rem]"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-shine !rounded-[3rem]"></div>
+          <div class="relative w-full h-full flex flex-col z-10 overflow-hidden" :class="uiMode === 'modern' ? '' : 'liquidGlass-text'">
             
             <div class="px-8 py-4 md:px-7 md:py-4 flex justify-between items-center border-b border-white/10 bg-white/5 z-20 rounded-t-[3rem]">
               <div class="flex items-center gap-5">
@@ -2387,16 +2481,16 @@ onUnmounted(() => {
       >
 
         <div 
-          class="!absolute top-[80px] right-6 lg:right-12 w-64 rounded-2xl 
-                liquidGlass-wrapper
-                shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] 
-                transition-transform duration-200 ease-out"
+          :class="[
+            '!absolute top-[80px] right-6 lg:right-12 w-64 rounded-2xl shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] transition-transform duration-200 ease-out overflow-hidden',
+            uiMode === 'modern' ? 'bg-black/40 backdrop-blur-3xl border border-white/20' : 'liquidGlass-wrapper'
+          ]"
           :style="glassTransform"
         >
-          <div class="liquidGlass-effect !rounded-2xl"></div>
-          <div class="liquidGlass-tint !rounded-2xl"></div>
-          <div class="liquidGlass-shine !rounded-2xl"></div>
-          <div class="liquidGlass-text w-full p-2 relative z-10">
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-effect !rounded-2xl"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-tint !rounded-2xl"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-shine !rounded-2xl"></div>
+          <div class="w-full p-2 relative z-10" :class="uiMode === 'modern' ? '' : 'liquidGlass-text'">
 
             <div 
               class="absolute inset-0 rounded-2xl pointer-events-none"
@@ -2410,16 +2504,17 @@ onUnmounted(() => {
               <div class="relative w-10 h-10">
                 <div class="absolute inset-0 rounded-full bg-gradient-to-tr from-blue-500/60 to-blue-400/60 blur-sm opacity-70"></div>
                 <div class="relative w-full h-full rounded-full bg-white/10 border border-white/20 flex items-center justify-center font-bold text-sm text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]">
-                  {{ currentUser.username.charAt(0).toUpperCase() }}
+                  <span v-if="isLoggedIn">{{ currentUser.username.charAt(0).toUpperCase() }}</span>
+                  <UserIcon v-else class="w-5 h-5 text-white" />
                 </div>
               </div>
 
               <div class="flex-1 min-w-0">
                 <h4 class="text-white font-bold text-sm truncate">
-                  @{{ currentUser.username }}
+                  {{ isLoggedIn ? '@' + currentUser.username : 'Guest Mode' }}
                 </h4>
                 <p class="text-xs text-blue-400 font-medium drop-shadow-[0_0_6px_rgba(96,165,250,0.7)]">
-                  Premium Member
+                  {{ isLoggedIn ? 'VIP Member' : 'Trial Preview' }}
                 </p>
               </div>
             </div>
@@ -2427,6 +2522,7 @@ onUnmounted(() => {
             <div class="space-y-1 relative z-10">
 
              <button
+                    v-if="isLoggedIn"
                     @mousemove="(e) => handleMagnetMove(e, 'settings')"
                     @mouseleave="resetMagnet"
                     class="group w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 rounded-xl transition-all text-left hover:bg-white/10 hover:text-white"
@@ -2442,29 +2538,32 @@ onUnmounted(() => {
               <div class="px-2 py-2 border-t border-white/10 mt-2 relative z-10">
                 <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
                   <span>Glass Effect</span>
-                  <span class="text-blue-400 capitalize">{{ glassMode === 'full' ? 'Full' : glassMode === 'edge' ? 'Edge' : 'Pure' }}</span>
+                  <span class="text-blue-400 capitalize flex items-center gap-1">
+                    {{ glassMode === 'full' ? 'Full' : glassMode === 'edge' ? 'Edge' : 'Pure' }}
+                  </span>
                 </div>
                 <div class="grid grid-cols-3 gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
                   <button 
                     @click="setGlassMode('full')" 
-                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center flex items-center justify-center gap-1"
                     :class="glassMode === 'full' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
-                    Full
+                    <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                    <span>Full</span>
                   </button>
                   <button 
                     @click="setGlassMode('edge')" 
                     class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
                     :class="glassMode === 'edge' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
-                    Edge
+                    <span>Edge</span>
                   </button>
                   <button 
                     @click="setGlassMode('off')" 
                     class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
                     :class="glassMode === 'off' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
-                    Pure
+                    <span>Pure</span>
                   </button>
                 </div>
               </div>
@@ -2485,10 +2584,11 @@ onUnmounted(() => {
                   </button>
                   <button 
                     @click="changeUIMode('modern')" 
-                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center flex items-center justify-center gap-1"
                     :class="uiMode === 'modern' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
-                    Modern Stack
+                    <span>Modern</span>
+                    <span v-if="!isLoggedIn" class="text-[9px] bg-amber-400/20 text-amber-300 border border-amber-400/40 px-1 py-0.5 rounded font-black tracking-wider uppercase">Trial</span>
                   </button>
                 </div>
               </div>
@@ -2509,9 +2609,10 @@ onUnmounted(() => {
                   </button>
                   <button 
                     @click="setSmoothScroll(true)" 
-                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center flex items-center justify-center gap-1"
                     :class="isSmoothScrollEnabled ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
+                    <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
                     On (Smooth)
                   </button>
                 </div>
@@ -2546,7 +2647,8 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'emerald' ? 'bg-emerald-600/80 border-emerald-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Emerald
+                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <span v-else class="w-2 h-2 rounded-full bg-emerald-400"></span> Emerald
                     </button>
 
                     <button 
@@ -2554,7 +2656,8 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'crimson' ? 'bg-rose-600/80 border-rose-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <span class="w-2 h-2 rounded-full bg-rose-400"></span> Crimson
+                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <span v-else class="w-2 h-2 rounded-full bg-rose-400"></span> Crimson
                     </button>
 
                     <button 
@@ -2562,7 +2665,8 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'violet' ? 'bg-purple-600/80 border-purple-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <span class="w-2 h-2 rounded-full bg-purple-400"></span> Violet
+                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <span v-else class="w-2 h-2 rounded-full bg-purple-400"></span> Violet
                     </button>
 
                     <button 
@@ -2570,13 +2674,15 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'frost' ? 'bg-cyan-600/80 border-cyan-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <span class="w-2 h-2 rounded-full bg-cyan-400"></span> Frost
+                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <span v-else class="w-2 h-2 rounded-full bg-cyan-400"></span> Frost
                     </button>
                   </div>
                 </div>
               </Transition>
 
              <button 
+                  v-if="isLoggedIn"
                   @click="handleLogout"
                   @mousemove="(e) => handleMagnetMove(e, 'logout')"
                   @mouseleave="resetMagnet"
@@ -2589,8 +2695,51 @@ onUnmounted(() => {
                 Log Out
               </button>
 
+              <button 
+                  v-else
+                  @click="isProfileOpen = false; isLoginOpen = true;"
+                  class="group w-full flex items-center gap-3 p-2.5 text-sm font-bold text-blue-400 rounded-xl transition-all text-left mt-1 hover:bg-blue-500/10 hover:text-blue-300"
+                >
+                <UserIcon class="w-4 h-4 group-hover:scale-110 transition-transform" />
+                Sign In
+              </button>
+
             </div>
 
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- GUEST MODERN STACK FLOATING TRIAL BADGE -->
+    <Transition enter-active-class="transition-all duration-500 ease-out" enter-from-class="opacity-0 -translate-y-4 scale-90" enter-to-class="opacity-100 translate-y-0 scale-100" leave-active-class="transition-all duration-500 ease-in" leave-from-class="opacity-100 translate-y-0 scale-100" leave-to-class="opacity-0 -translate-y-4 scale-90">
+      <div v-if="!isLoggedIn && uiMode === 'modern' && isGuestModernTrialActive" class="fixed top-5 left-1/2 -translate-x-1/2 z-[300] flex items-center gap-3 px-4 py-2 rounded-full bg-gradient-to-r from-blue-600/80 via-purple-600/80 to-pink-600/80 backdrop-blur-xl border border-white/30 shadow-[0_10px_30px_rgba(59,130,246,0.4)] text-white text-xs font-bold pointer-events-auto">
+        <Sparkles class="w-4 h-4 text-amber-300 animate-pulse" />
+        <span>Modern Trial: <strong class="font-mono text-amber-200 text-sm ml-1">{{ formatTimeLeft }}</strong></span>
+        <button @click="isLoginOpen = true" class="ml-2 px-3 py-1 bg-white text-black hover:bg-amber-300 font-extrabold text-[11px] rounded-full transition-all shadow-md active:scale-95">
+          Sign In (Unlimited)
+        </button>
+      </div>
+    </Transition>
+
+    <!-- MODERN STACK TRIAL EXPIRED MODAL -->
+    <Transition name="vision-pro">
+      <div v-if="isTrialEndModalOpen" class="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md" @click.self="isTrialEndModalOpen = false">
+        <div class="relative w-full max-w-md p-8 rounded-3xl bg-[#0f0f15]/90 border border-white/20 shadow-[0_25px_80px_rgba(0,0,0,0.9)] text-center overflow-hidden">
+          <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-tr from-blue-500 to-purple-600 flex items-center justify-center border border-white/30 shadow-lg">
+            <Sparkles class="w-8 h-8 text-white" />
+          </div>
+          <h3 class="text-2xl font-black text-white tracking-tight mb-2">Modern Stack Trial Ended</h3>
+          <p class="text-xs text-gray-300/90 leading-relaxed mb-6 font-medium">
+            Your 90-second Modern Stack preview has finished. Sign in to your account to unlock permanent unlimited Modern Stack & Ambient Themes!
+          </p>
+          <div class="flex flex-col gap-3">
+            <button @click="isTrialEndModalOpen = false; isLoginOpen = true;" class="w-full py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-extrabold text-sm shadow-xl transition-all hover:scale-[1.02] active:scale-95">
+              Sign In Now (Unlock All)
+            </button>
+            <button @click="isTrialEndModalOpen = false" class="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 text-gray-300 font-bold text-xs transition-colors">
+              Continue in Classic UI
+            </button>
           </div>
         </div>
       </div>
@@ -2622,16 +2771,28 @@ onUnmounted(() => {
         <span class="text-blue-400">.</span>
       </h1>
 
-      <div 
-        @click="handleUserIconClick" 
-        class="relative w-10 h-10 rounded-full cursor-pointer hover:scale-110 transition-transform duration-300 pointer-events-auto"
-      >
-        <!-- box-shadow glow instead of a blur-md div — GPU composited, zero repaint cost -->
-        <div class="w-full h-full rounded-full bg-white/10 border border-white/25 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_0_14px_3px_rgba(96,165,250,0.4)]">
-          <span v-if="isLoggedIn" class="font-bold text-sm text-white">
-            {{ currentUser.username.charAt(0).toUpperCase() }}
-          </span>
-          <UserIcon v-else class="w-5 h-5 text-white" />
+      <div class="flex items-center gap-3 pointer-events-auto">
+        <!-- UI Style & Customization Quick Switcher Button -->
+        <button 
+          @click="isProfileOpen = !isProfileOpen" 
+          class="relative p-2.5 rounded-full bg-white/10 border border-white/20 hover:bg-white/20 hover:scale-110 transition-all duration-300 flex items-center justify-center group shadow-md"
+          title="UI Style & Customization"
+        >
+          <Sparkles class="w-4 h-4 text-amber-300 group-hover:rotate-12 transition-transform" />
+        </button>
+
+        <!-- User Profile Avatar / Login Trigger -->
+        <div 
+          @click="handleUserIconClick" 
+          class="relative w-10 h-10 rounded-full cursor-pointer hover:scale-110 transition-transform duration-300"
+          title="Account Profile"
+        >
+          <div class="w-full h-full rounded-full bg-white/10 border border-white/25 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_0_14px_3px_rgba(96,165,250,0.4)]">
+            <span v-if="isLoggedIn" class="font-bold text-sm text-white">
+              {{ currentUser.username.charAt(0).toUpperCase() }}
+            </span>
+            <UserIcon v-else class="w-5 h-5 text-white" />
+          </div>
         </div>
       </div>
 
@@ -3322,7 +3483,7 @@ onUnmounted(() => {
 
             <!-- Members Only Lock Screen (Bottom) -->
             <div v-if="!isLoggedIn" class="relative z-30 mt-12 py-20 flex flex-col items-center justify-center text-center px-4 space-y-6 border-t border-white/10 bg-gradient-to-t from-black to-transparent">
-              <div class="absolute inset-0 bg-[#0a0a0a]/90 -z-10"></div>
+              <div class="absolute inset-0  -z-10"></div>
               <div class="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mb-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-500"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               </div>
