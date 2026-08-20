@@ -1178,14 +1178,16 @@ const checkLoginStatus = async () => {
 };
 
 
+const PLAYER_BASE_URL = import.meta.env.VITE_PLAYER_BASE_URL || 'https://player.videasy.net';
+
 const buildEmbedUrl = (playState) => {
   if (!playState) return '';
   const { tmdbId, type, season, episode, startTime } = playState;
   const progressParam = startTime ? `&progress=${startTime}` : '';
   if (type === 'movie') {
-    return `https://player.videasy.net/movie/${tmdbId}?overlay=false&color=3B82F6${progressParam}`;
+    return `${PLAYER_BASE_URL}/movie/${tmdbId}?overlay=false&color=3B82F6${progressParam}`;
   } else {
-    return `https://player.videasy.net/tv/${tmdbId}/${season}/${episode}?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=false&overlay=false&color=3B82F6${progressParam}`;
+    return `${PLAYER_BASE_URL}/tv/${tmdbId}/${season}/${episode}?nextEpisode=true&autoplayNextEpisode=true&episodeSelector=false&overlay=false&color=3B82F6${progressParam}`;
   }
 };
 
