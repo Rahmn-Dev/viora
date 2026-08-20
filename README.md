@@ -147,8 +147,16 @@ Inspired by:
 
 - Apple VisionOS
 - Netflix
-- Apple TV
 - Modern streaming platforms
 - Glassmorphism UI trends
+
+---
+
+## ⚖️ License & Copyright
+
+Copyright © 2026 **Rahmn-Dev**. All Rights Reserved.
+
+This project and its source code are the sole intellectual property of **Rahmn-Dev**. Personal viewing and code review for portfolio evaluation is permitted. Unauthorized copying, redistribution, modification, or commercial use of this project is strictly prohibited.
+
 
 ---
