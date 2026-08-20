@@ -2,11 +2,24 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite' // <-- INI MESIN BARUNYA
+import obfuscatorPlugin from 'rollup-plugin-obfuscator'
 
 export default defineConfig({
   plugins: [
     vue(),
     tailwindcss(), // <-- WAJIB DIPANGGIL DI SINI
+    obfuscatorPlugin({
+      compact: true,
+      controlFlowFlattening: false,
+      deadCodeInjection: false,
+      debugProtection: false,
+      disableConsoleOutput: true,
+      identifierNamesGenerator: 'hexadecimal',
+      log: false,
+      stringArray: true,
+      stringArrayEncoding: ['base64'],
+      stringArrayThreshold: 0.75
+    })
   ],
   resolve: {
     alias: {

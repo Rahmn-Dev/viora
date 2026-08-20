@@ -53,12 +53,28 @@
   ::before,
   ::after {
     border-color: var(--color-border);
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+
+  input,
+  textarea {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
   }
 
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     overflow-x: hidden;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
   }
 }
 
@@ -145,13 +161,13 @@ html {
 
 /* Masterpiece Liquid Glass Pane */
 .liquid-glass-pane {
-
-  /* background: linear-gradient(135deg, rgba(255, 255, 255, 0.412) 0%, rgba(255,255,255,0.02) 100%); */
   border-radius: 3rem;
-  /* box-shadow: 
-     0 30px 60px -15px rgba(0,0,0,0.6), 
-     inset 0 1px 1px rgba(255, 255, 255, 0.631), 
-     inset 0 -1px 1px rgba(255, 255, 255, 0.522);  */
+}
+
+/* Content Visibility Optimization for Offscreen Rendering */
+.content-visibility-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 1px 420px;
 }
 
 /* Trik membuat border gradient yang tipis ala Apple */

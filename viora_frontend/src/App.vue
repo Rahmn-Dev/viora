@@ -2,10 +2,10 @@
 
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
 import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, Menu, Maximize, Minimize, Lock } from 'lucide-vue-next';
+import Lenis from 'lenis';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import Lenis from 'lenis';
 
 // Instance khusus untuk request ke backend Django kita
 const api = axios.create({
@@ -49,8 +49,6 @@ api.interceptors.response.use(
   }
 );
 
-
-let lenis;
 
 const mouseX = ref(0)
 const mouseY = ref(0)
@@ -326,6 +324,79 @@ const cycleGlassMode = () => {
   if (glassMode.value === 'full') setGlassMode('edge');
   else if (glassMode.value === 'edge') setGlassMode('off');
   else setGlassMode('full');
+};
+
+// --- SMOOTH SCROLL STATE (true = Lenis Smooth, false = Native Performance) ---
+let lenis = null;
+let lenisRafId = null;
+
+const isSmoothScrollEnabled = ref(localStorage.getItem('viora_smooth_scroll') === 'true');
+
+const initLenis = () => {
+  if (typeof window === 'undefined') return;
+  destroyLenis();
+  
+  if (isSmoothScrollEnabled.value) {
+    lenis = new Lenis({
+      duration: 1.2,
+      easing: (t) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
+      smoothWheel: true,
+      wheelMultiplier: 0.9,
+      touchMultiplier: 1.5,
+      syncTouch: false,
+    });
+
+    function raf(time) {
+      if (lenis) {
+        lenis.raf(time);
+        lenisRafId = requestAnimationFrame(raf);
+      }
+    }
+    lenisRafId = requestAnimationFrame(raf);
+    lenis.on('scroll', handleScroll);
+  } else {
+    window.addEventListener('scroll', handleScroll, { passive: true });
+  }
+};
+
+const destroyLenis = () => {
+  if (lenisRafId) {
+    cancelAnimationFrame(lenisRafId);
+    lenisRafId = null;
+  }
+  if (lenis) {
+    lenis.destroy();
+    lenis = null;
+  }
+  window.removeEventListener('scroll', handleScroll);
+};
+
+const setSmoothScroll = (enabled) => {
+  isSmoothScrollEnabled.value = enabled;
+  localStorage.setItem('viora_smooth_scroll', enabled ? 'true' : 'false');
+  initLenis();
+};
+const uiMode = ref(localStorage.getItem('viora_ui_mode') || 'classic');
+const isSwitchingUI = ref(false);
+
+// --- MODERN AMBIENT THEME STATE (cosmic | sand | emerald | crimson | violet | frost) ---
+const modernTheme = ref(localStorage.getItem('viora_modern_theme') || 'cosmic');
+
+const setModernTheme = (themeKey) => {
+  modernTheme.value = themeKey;
+  localStorage.setItem('viora_modern_theme', themeKey);
+};
+
+const changeUIMode = (mode) => {
+  if (uiMode.value === mode) return;
+  isSwitchingUI.value = true;
+  setTimeout(() => {
+    uiMode.value = mode;
+    localStorage.setItem('viora_ui_mode', mode);
+    setTimeout(() => {
+      isSwitchingUI.value = false;
+    }, 500);
+  }, 1000);
 };
 
 const isPlayerOpen = ref(false);
@@ -655,7 +726,10 @@ const fetchAllData = async () => {
     fetchStudioLogos();
 
     movieCategories.value = await Promise.all(categoriesData.map(async (cat) => ({
-      id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw)
+      id: cat.id,
+      title: cat.title,
+      layout: cat.layout,
+      movies: cat.layout === 'hero-card' ? await enrichMoviesWithLogos(cat.raw) : cat.raw
     })));
 
     const kidsCatsData = [
@@ -665,13 +739,15 @@ const fetchAllData = async () => {
       { id: 'k4', title: 'Anime Universe', layout: 'landscape', raw: animeTv.data.results.slice(0, 10).map(m=>({...m, media_type: 'tv'})) },
     ];
     
-    kidsCategories.value = await Promise.all(kidsCatsData.map(async (cat) => ({
-      id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw)
-    })));
+    kidsCategories.value = kidsCatsData.map(cat => ({
+      id: cat.id, title: cat.title, layout: cat.layout, movies: cat.raw
+    }));
     
     startHeroCarousel();
-    isLoading.value = false;
-  } catch (error) { console.error(error); } finally { isLoading.value = false; }
+    setTimeout(() => {
+      isLoading.value = false;
+    }, 1200);
+  } catch (error) { console.error(error); setTimeout(() => { isLoading.value = false; }, 1200); }
 };
 
 const fetchMoviePageData = async () => {
@@ -695,7 +771,12 @@ const fetchMoviePageData = async () => {
       { id: 'm3', title: 'Top Rated', layout: 'landscape', raw: topRated.data.results.slice(0, 10).map(m => ({...m, media_type: 'movie'})) },
       { id: 'm4', title: 'Upcoming', layout: 'portrait', raw: upcoming.data.results.slice(0, 10).map(m => ({...m, media_type: 'movie'})) }
     ];
-    movieCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw) })));
+    movieCategoriesList.value = await Promise.all(cats.map(async (cat) => ({
+      id: cat.id,
+      title: cat.title,
+      layout: cat.layout,
+      movies: cat.layout === 'hero-card' ? await enrichMoviesWithLogos(cat.raw) : cat.raw
+    })));
   } catch(e) { console.error(e); }
 };
 
@@ -720,7 +801,12 @@ const fetchTvPageData = async () => {
       { id: 't3', title: 'Popular Series', layout: 'landscape', raw: popData.slice(8, 20) },
       { id: 't4', title: 'Top Rated', layout: 'portrait', raw: topRated.data.results.slice(0, 10).map(m => ({...m, media_type: 'tv'})) }
     ];
-    tvCategoriesList.value = await Promise.all(cats.map(async (cat) => ({ id: cat.id, title: cat.title, layout: cat.layout, movies: await enrichMoviesWithLogos(cat.raw) })));
+    tvCategoriesList.value = await Promise.all(cats.map(async (cat) => ({
+      id: cat.id,
+      title: cat.title,
+      layout: cat.layout,
+      movies: cat.layout === 'hero-card' ? await enrichMoviesWithLogos(cat.raw) : cat.raw
+    })));
   } catch(e) { console.error(e); }
 };
 
@@ -761,7 +847,7 @@ const changeView = async (viewType) => {
   if (currentView.value === viewType) return; 
   
   if (lenis) {
-    lenis.scrollTo(0, { immediate: false }); 
+    lenis.scrollTo(0, { immediate: false });
   } else {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1302,8 +1388,10 @@ const handlePlayerMessage = async (event) => {
 };
 
 let ticking = false;
-const handleScroll = ({ scroll }) => {
+const handleScroll = (evt) => {
+  const scroll = typeof evt === 'number' ? evt : (evt?.scroll ?? (window.scrollY || document.documentElement.scrollTop || 0));
   if (!ticking) {
+    ticking = true;
     window.requestAnimationFrame(() => {
       isScrolled.value = scroll > 50;
       
@@ -1381,7 +1469,6 @@ watch(hoverIndex, () => {
     }, 180) 
   }
 })
-let lenisRafId;
 // Daftar domain iklan/tracker yang sering dibuka oleh embed player pihak ketiga
 const AD_TRACKER_DOMAINS = [
   'doubleclick', 'googlesyndication', 'adnxs', 'adsrvr', 'rubiconproject',
@@ -1423,21 +1510,8 @@ onMounted(() => {
   });
 
   if (typeof window !== 'undefined') {
-    lenis = new Lenis({
-        duration: 0.9,
-        easing: (t) => 1 - Math.pow(1 - t, 3), // cubic ease-out: snappy start, smooth stop
-        smoothWheel: true,
-        wheelMultiplier: 1.2,
-        touchMultiplier: 2
-    })
-
-    function raf(time) {
-        lenis.raf(time)
-        lenisRafId = requestAnimationFrame(raf) 
-    }
-    lenisRafId = requestAnimationFrame(raf)
-    lenis.on('scroll', handleScroll) // Use Lenis scroll event — avoids double-firing with window scroll
-    window.addEventListener('mousemove', handleMouseMove)
+    initLenis();
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
   }
   
   blockAdsAndTrackers();
@@ -1449,9 +1523,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (lenisRafId) cancelAnimationFrame(lenisRafId); 
-  if (lenis) lenis.destroy();
-  window.removeEventListener('mousemove', handleMouseMove)
+  destroyLenis();
+  window.removeEventListener('mousemove', handleMouseMove);
   window.removeEventListener('keydown', handleKeydown);
   window.removeEventListener('message', handlePlayerMessage);
   if (heroTimer) clearInterval(heroTimer);
@@ -1460,8 +1533,71 @@ onUnmounted(() => {
 </script>
 
 <template>
-  
-  <div :class="['min-h-screen bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32', `glass-mode-${glassMode}`]">
+  <div :class="['min-h-screen text-white font-sans selection:bg-blue-500/30 overflow-x-hidden pb-32 transition-colors duration-1000', uiMode === 'modern' ? 'bg-transparent' : 'bg-[radial-gradient(circle_at_20%_30%,rgba(59,130,246,0.08),transparent_40%)] bg-[#09090b]', `glass-mode-${glassMode}`]">
+    
+    <!-- Vision OS Ambient Backdrop (MODERN UI) - Multi-Theme Ambient -->
+    <div v-if="uiMode === 'modern'" class="fixed inset-0 -z-50 pointer-events-none overflow-hidden bg-[#050507] transition-colors duration-1000">
+      <div 
+        class="absolute inset-0 transition-all duration-1000 ease-in-out"
+        :style="{
+          background: modernTheme === 'sand' ? 'radial-gradient(circle at 80% 20%, rgba(245, 158, 11, 0.22), transparent 55%), radial-gradient(circle at 20% 80%, rgba(180, 83, 9, 0.18), transparent 55%)' :
+                      modernTheme === 'emerald' ? 'radial-gradient(circle at 80% 20%, rgba(16, 185, 129, 0.22), transparent 55%), radial-gradient(circle at 20% 80%, rgba(13, 148, 136, 0.18), transparent 55%)' :
+                      modernTheme === 'crimson' ? 'radial-gradient(circle at 80% 20%, rgba(244, 63, 94, 0.22), transparent 55%), radial-gradient(circle at 20% 80%, rgba(217, 119, 6, 0.18), transparent 55%)' :
+                      modernTheme === 'violet' ? 'radial-gradient(circle at 80% 20%, rgba(217, 70, 239, 0.22), transparent 55%), radial-gradient(circle at 20% 80%, rgba(124, 58, 237, 0.18), transparent 55%)' :
+                      modernTheme === 'frost' ? 'radial-gradient(circle at 80% 20%, rgba(6, 182, 212, 0.22), transparent 55%), radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.18), transparent 55%)' :
+                      'radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.20), transparent 55%), radial-gradient(circle at 20% 80%, rgba(147, 51, 234, 0.18), transparent 55%)'
+        }"
+      ></div>
+    </div>
+
+    <!-- INITIAL STARTUP & UI SWITCHER PRELOADER (Cinematic Reveal Animation) -->
+    <Transition
+      enter-active-class="transition-opacity duration-300"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-700"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="isLoading || isSwitchingUI" class="fixed inset-0 z-[300] bg-[#050507] flex flex-col items-center justify-center select-none overflow-hidden">
+        <!-- Glowing Ambient Aura -->
+        <div class="absolute w-80 h-80 bg-gradient-to-r from-blue-600/25 via-indigo-600/20 to-purple-600/25 blur-[120px] rounded-full animate-pulse"></div>
+
+        <div class="relative z-10 flex flex-col items-center">
+          <!-- Staggered Letter Reveal Wordmark: V I O R A . -->
+          <div class="flex items-baseline overflow-hidden py-2 px-6 mb-8">
+            <div class="overflow-hidden inline-flex">
+              <span class="text-6xl md:text-8xl font-black tracking-tighter text-white inline-block opacity-0 animate-reveal-v">V</span>
+            </div>
+            <div class="overflow-hidden inline-flex">
+              <span class="text-6xl md:text-8xl font-black tracking-tighter text-white inline-block opacity-0 animate-reveal-i">I</span>
+            </div>
+            <div class="overflow-hidden inline-flex">
+              <span class="text-6xl md:text-8xl font-black tracking-tighter text-white inline-block opacity-0 animate-reveal-o">O</span>
+            </div>
+            <div class="overflow-hidden inline-flex">
+              <span class="text-6xl md:text-8xl font-black tracking-tighter text-white inline-block opacity-0 animate-reveal-r">R</span>
+            </div>
+            <div class="overflow-hidden inline-flex">
+              <span class="text-6xl md:text-8xl font-black tracking-tighter text-white inline-block opacity-0 animate-reveal-a">A</span>
+            </div>
+            <div class="overflow-hidden inline-flex ml-1">
+              <span class="text-6xl md:text-8xl font-black tracking-tighter text-blue-500 inline-block opacity-0 animate-reveal-dot">.</span>
+            </div>
+          </div>
+
+          <!-- Sleek Subtitle + Animated Progress Indicator -->
+          <div class="flex flex-col items-center gap-4">
+            <div class="w-44 h-1 bg-white/10 rounded-full overflow-hidden relative">
+              <div class="absolute inset-y-0 left-0 bg-gradient-to-r from-blue-500 via-indigo-400 to-purple-500 rounded-full animate-loading-bar"></div>
+            </div>
+            <span class="text-xs md:text-sm font-bold tracking-[0.35em] uppercase text-white/70">
+              {{ isSwitchingUI ? 'Optimizing Interface' : 'Initializing Cinema Experience' }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </Transition>
     
     <Transition
       enter-active-class="transition-opacity duration-300"
@@ -2331,6 +2467,113 @@ onUnmounted(() => {
                 </div>
               </div>
 
+              <!-- UI Mode Selector -->
+              <div class="px-2 py-2 border-t border-white/10 relative z-10">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
+                  <span>UI Style</span>
+                  <span class="text-blue-400 capitalize">{{ uiMode }}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                  <button 
+                    @click="changeUIMode('classic')" 
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    :class="uiMode === 'classic' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
+                  >
+                    Classic
+                  </button>
+                  <button 
+                    @click="changeUIMode('modern')" 
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    :class="uiMode === 'modern' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
+                  >
+                    Modern Stack
+                  </button>
+                </div>
+              </div>
+
+              <!-- Smooth Scroll Toggle (ON / OFF) -->
+              <div class="px-2 py-2 border-t border-white/10 relative z-10">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
+                  <span>Smooth Scroll</span>
+                  <span class="text-blue-400 capitalize font-extrabold">{{ isSmoothScrollEnabled ? 'Enabled' : 'Native' }}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
+                  <button 
+                    @click="setSmoothScroll(false)" 
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    :class="!isSmoothScrollEnabled ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
+                  >
+                    Off (Native)
+                  </button>
+                  <button 
+                    @click="setSmoothScroll(true)" 
+                    class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center"
+                    :class="isSmoothScrollEnabled ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
+                  >
+                    On (Smooth)
+                  </button>
+                </div>
+              </div>
+
+              <!-- Modern Ambient Theme Selector (Visible when Modern Stack is active) -->
+              <Transition enter-active-class="transition-all duration-300" enter-from-class="opacity-0 -translate-y-1" enter-to-class="opacity-100 translate-y-0">
+                <div v-if="uiMode === 'modern'" class="px-2 py-2 border-t border-white/10 relative z-10">
+                  <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
+                    <span>Modern Ambient</span>
+                    <span class="text-amber-400 capitalize font-extrabold">{{ modernTheme }}</span>
+                  </div>
+                  <div class="grid grid-cols-3 gap-1.5 bg-white/5 p-1.5 rounded-xl border border-white/10">
+                    <button 
+                      @click="setModernTheme('cosmic')" 
+                      class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
+                      :class="modernTheme === 'cosmic' ? 'bg-blue-600/80 border-blue-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
+                    >
+                      <span class="w-2 h-2 rounded-full bg-blue-400"></span> Cosmic
+                    </button>
+
+                    <button 
+                      @click="setModernTheme('sand')" 
+                      class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
+                      :class="modernTheme === 'sand' ? 'bg-amber-600/80 border-amber-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
+                    >
+                      <span class="w-2 h-2 rounded-full bg-amber-400"></span> Sand
+                    </button>
+
+                    <button 
+                      @click="setModernTheme('emerald')" 
+                      class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
+                      :class="modernTheme === 'emerald' ? 'bg-emerald-600/80 border-emerald-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
+                    >
+                      <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Emerald
+                    </button>
+
+                    <button 
+                      @click="setModernTheme('crimson')" 
+                      class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
+                      :class="modernTheme === 'crimson' ? 'bg-rose-600/80 border-rose-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
+                    >
+                      <span class="w-2 h-2 rounded-full bg-rose-400"></span> Crimson
+                    </button>
+
+                    <button 
+                      @click="setModernTheme('violet')" 
+                      class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
+                      :class="modernTheme === 'violet' ? 'bg-purple-600/80 border-purple-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
+                    >
+                      <span class="w-2 h-2 rounded-full bg-purple-400"></span> Violet
+                    </button>
+
+                    <button 
+                      @click="setModernTheme('frost')" 
+                      class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
+                      :class="modernTheme === 'frost' ? 'bg-cyan-600/80 border-cyan-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
+                    >
+                      <span class="w-2 h-2 rounded-full bg-cyan-400"></span> Frost
+                    </button>
+                  </div>
+                </div>
+              </Transition>
+
              <button 
                   @click="handleLogout"
                   @mousemove="(e) => handleMagnetMove(e, 'logout')"
@@ -2353,18 +2596,16 @@ onUnmounted(() => {
 
    <header 
       :class="[
-        'fixed top-0 w-full z-40 flex items-center justify-between px-6 lg:px-12',
-        'transition-[padding,background-color,border-color,box-shadow] duration-500',
-        isScrolled 
-          ? 'py-3 border-b border-white/10 viora-header-scrolled shadow-[0_8px_32px_rgba(0,0,0,0.3)]' 
-          : 'bg-transparent border-b border-transparent py-8'
+        'fixed top-0 w-full z-40 flex items-center justify-between px-6 lg:px-12 bg-transparent border-b border-transparent pointer-events-none',
+        'transition-[padding] duration-500',
+        isScrolled ? 'py-3' : 'py-8'
       ]"
       style="transform: translateZ(0);"
     >
 
       <h1 
         @click="changeView('home')" 
-        class="font-black tracking-tighter flex items-center cursor-pointer"
+        class="font-black tracking-tighter flex items-center cursor-pointer pointer-events-auto"
         :class="isScrolled ? 'text-2xl' : 'text-4xl'"
         style="transition: font-size 0.5s ease;"
       >
@@ -2381,7 +2622,7 @@ onUnmounted(() => {
 
       <div 
         @click="handleUserIconClick" 
-        class="relative w-10 h-10 rounded-full cursor-pointer hover:scale-110 transition-transform duration-300"
+        class="relative w-10 h-10 rounded-full cursor-pointer hover:scale-110 transition-transform duration-300 pointer-events-auto"
       >
         <!-- box-shadow glow instead of a blur-md div — GPU composited, zero repaint cost -->
         <div class="w-full h-full rounded-full bg-white/10 border border-white/25 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_0_14px_3px_rgba(96,165,250,0.4)]">
@@ -2403,9 +2644,11 @@ onUnmounted(() => {
     </div>
 
     <div v-else>
-      <section class="relative w-full h-[90vh] lg:h-[100vh] overflow-hidden bg-black">
+      <!-- CLASSIC HERO SECTION -->
+      <section v-if="uiMode === 'classic'" class="relative w-full h-[90vh] lg:h-[100vh] overflow-hidden bg-black">
         <transition-group name="hero-fade">
           <div v-for="(movie, index) in activeHeroMovies" :key="movie.id" v-show="index === currentHeroIndex" class="absolute inset-0">
+            <!-- Hero Image -->
             <img loading="lazy" decoding="async" :src="getImageUrl(movie.backdrop_path, 'original')" class="w-full h-full object-cover opacity-60 scale-100 transition-transform duration-[10s]" :class="index === currentHeroIndex ? 'scale-110' : 'scale-100'" />
             
             <div class="absolute inset-0 bg-gradient-to-t from-[#09090b] via-[#0b1220]/1 to-transparent"></div>
@@ -2414,7 +2657,7 @@ onUnmounted(() => {
             <div class="absolute bottom-[15%] left-6 lg:left-12 max-w-2xl space-y-8 z-10">
               <div class="space-y-6">
                 <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[300px] md:max-w-[480px] max-h-[160px] object-contain drop-shadow-lg" />
-                <h2 v-else class="text-5xl lg:text-7xl font-black uppercase  tracking-tighter">{{ movie.title || movie.name }}</h2>
+                <h2 v-else class="text-5xl lg:text-7xl font-black uppercase tracking-tighter">{{ movie.title || movie.name }}</h2>
               </div>
 
               <p class="text-gray-300 text-lg line-clamp-3 max-w-xl font-medium drop-shadow-md leading-relaxed">
@@ -2423,7 +2666,7 @@ onUnmounted(() => {
 
               <div class="flex items-center gap-4">
                 <Button @click="openPlayer(movie)" size="lg" class="bg-white text-black hover:bg-blue-500 hover:text-white font-black px-10 h-12 rounded-xl transition-transform transition-opacity shadow-2xl">
-                  <Play class="w-5 h-5  fill-current" /> 
+                  <Play class="w-5 h-5 fill-current" /> 
                   <span class="hidden sm:inline">Play</span>
                 </Button>
 
@@ -2443,48 +2686,113 @@ onUnmounted(() => {
         </transition-group>
       </section>
 
-      <main class="relative z-20 -mt-20 space-y-10 pb-20">
+      <!-- MODERN UI (VISION PRO FLOATING ROUNDED HERO STAGE) -->
+      <section v-else class="relative w-full pt-24 md:pt-28 px-4 md:px-12 max-w-[1600px] mx-auto">
+        <div class="relative w-full h-[75vh] md:h-[82vh] rounded-[2.5rem] md:rounded-[3rem] overflow-hidden border border-white/20 shadow-[0_30px_100px_rgba(0,0,0,0.8)] bg-black/40">
+          <transition-group name="hero-fade">
+            <div v-for="(movie, index) in activeHeroMovies" :key="movie.id" v-show="index === currentHeroIndex" class="absolute inset-0">
+              <!-- Rounded Floating Hero Image -->
+              <img loading="lazy" decoding="async" :src="getImageUrl(movie.backdrop_path, 'original')" class="w-full h-full object-cover opacity-70 transition-transform duration-[12s]" :class="index === currentHeroIndex ? 'scale-105' : 'scale-100'" />
+              
+              <div class="absolute inset-0 bg-gradient-to-t from-[#050507] via-black/30 to-transparent"></div>
+              <div class="absolute inset-0 bg-gradient-to-r from-[#050507]/90 via-black/40 to-transparent"></div>
+              
+              <div class="absolute bottom-[8%] left-6 lg:left-12 max-w-2xl z-10 space-y-4">
+                <!-- Title / Logo -->
+                <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[240px] md:max-w-[380px] max-h-[130px] object-contain drop-shadow-2xl" />
+                <h2 v-else class="text-3xl lg:text-5xl font-black uppercase tracking-tight text-white drop-shadow-lg">{{ movie.title || movie.name }}</h2>
+                
+                <!-- Vertical Stack Meta requested by user: Year -> % Match -> Type -->
+                <div class="flex items-center gap-2.5 text-xs md:text-sm font-extrabold flex-wrap">
+                  <span class="px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-white font-bold">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                  <span v-if="movie.vote_average" class="px-3 py-1 rounded-full bg-emerald-500/20 backdrop-blur-md border border-emerald-500/40 text-emerald-400 font-black shadow-[0_0_20px_rgba(16,185,129,0.3)]">
+                    {{ Math.round(movie.vote_average * 10) }}% Match
+                  </span>
+                  <span class="px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-white/80 uppercase tracking-widest text-[10px] md:text-xs font-extrabold">
+                    {{ movie.media_type === 'tv' ? 'Series' : 'Movie' }}
+                  </span>
+                </div>
 
+                <!-- Overview Paragraph -->
+                <p class="text-white/90 text-sm md:text-base line-clamp-3 max-w-xl font-medium leading-relaxed drop-shadow-md">
+                  {{ movie.overview }}
+                </p>
+
+                <!-- Apple Vision OS Pill Buttons -->
+                <div class="flex items-center gap-3.5 pt-3 flex-wrap">
+                  <Button @click="openPlayer(movie)" size="lg" class="bg-white text-black hover:bg-white/90 hover:scale-105 font-black px-8 h-12 rounded-full transition-all shadow-[0_10px_30px_rgba(255,255,255,0.3)] flex items-center gap-2">
+                    <Play class="w-5 h-5 fill-current" /> 
+                    <span class="text-sm md:text-base">Play</span>
+                  </Button>
+
+                  <Button @click="openInfo(movie)" size="lg" class="bg-white/15 backdrop-blur-2xl hover:bg-white/25 hover:scale-105 text-white font-bold px-8 h-12 rounded-full transition-all shadow-xl border border-white/20 flex items-center gap-2">
+                    <Info class="w-5 h-5" /> 
+                    <span class="text-sm md:text-base">More Info</span>
+                  </Button>
+
+                  <button @click="handleWatchlistToggle(movie)" class="w-12 h-12 rounded-full bg-white/15 backdrop-blur-2xl hover:bg-white/25 hover:scale-105 border border-white/20 flex items-center justify-center transition-all shadow-xl">
+                    <Check v-if="watchlist.has(movie?.id)" class="w-5 h-5 text-green-400" />
+                    <Plus v-else class="w-5 h-5 text-white" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </transition-group>
+        </div>
+      </section>
+
+      <main :class="['relative z-20 space-y-10 pb-20', uiMode === 'classic' ? '-mt-20' : 'mt-8 md:mt-12']">
 
        <section v-if="isLoggedIn && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
-          <div class="flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4 scroll-smooth hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200" style="padding-bottom: 20px; padding-top: 40px;">
-            <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none w-[300px] md:w-[390px] aspect-video rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:-translate-y-1 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu will-change-transform group ring-1 ring-white/5 cursor-pointer">
-              <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
-              <img 
-                :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" 
-                loading="lazy"
-                decoding="async"
-                class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
-                style="opacity: 0; transform: scale(1.02);"
-                @load="handleImageLoad"
-              />
-              <div class="absolute inset-0 bg-gradient-to-t   to-transparent p-5 flex flex-col justify-end">
-                <div class="mb-2">
-                  <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
-                  <h4 v-else class="text-sm font-black line-clamp-1">{{ movie.title || movie.name }}</h4>
+          <div :class="['flex gap-6 overflow-x-auto hide-scrollbar pb-20 pt-10 scroll-smooth transition-shadow duration-1200', uiMode === 'classic' ? 'hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)]' : '']">
+            <div v-for="movie in watchHistoryMovies" :key="movie.id" @click="openPlayer(movie)" 
+                 :class="[
+                   'relative flex-none w-[300px] md:w-[390px] aspect-video transition-all duration-500 transform-gpu group cursor-pointer',
+                   uiMode === 'classic' ? 'rounded-2xl overflow-hidden bg-[#18181b] hover:scale-105 hover:-translate-y-1 ring-1 ring-white/5' : 'p-2.5 rounded-[2.2rem] bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] hover:border-white/20 transition-all duration-300 hover:-translate-y-2'
+                 ]">
+              
+              <!-- Image Container -->
+              <div :class="['relative w-full h-full overflow-hidden bg-[#18181b]', uiMode === 'classic' ? 'rounded-2xl' : 'rounded-[1.6rem]']">
+                <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+                <img 
+                  :src="getImageUrl(movie.backdrop_path || movie.poster_path, movie.backdrop_path ? 'w500' : 'w780')" 
+                  loading="lazy"
+                  decoding="async"
+                  class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
+                  style="opacity: 0; transform: scale(1.02);"
+                  @load="handleImageLoad"
+                />
+                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent p-5 flex flex-col justify-end">
+                  <div class="mb-2">
+                    <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w300')" class="max-w-[140px] max-h-[45px] object-contain drop-shadow-lg transition-transform group-hover:scale-110 origin-left" />
+                    <h4 v-else class="text-sm font-extrabold text-white line-clamp-1 drop-shadow-md">{{ movie.title || movie.name }}</h4>
+                  </div>
+                  <div class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+                    <div class="px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-black/60 border border-white/20 shadow-md">
+                      <span class="text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                    </div> 
+                  </div>
                 </div>
-                <div class="flex items-center  gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class="px-2 py-0.5 rounded-md flex items-center gap-1 text-[11px] text-white bg-black/60 border border-white/20 shadow-md">
-                  <span class=" text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-                 </div> 
+                <!-- Progress Bar -->
+                <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80">
+                  <div class="h-full bg-blue-500" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
                 </div>
-              </div>
-              <div class="absolute bottom-0 left-0 w-full h-1.5 bg-gray-800/80">
-                <div class="h-full bg-blue-500" :style="{ width: (movie.progress_percentage || 0) + '%' }"></div>
-              </div>
-              <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 z-30 pointer-events-none">
-                <div class="w-14 h-14 bg-white/25 rounded-full flex items-center justify-center border border-white/30">
-                  <Lock v-if="!isLoggedIn" class="w-6 h-6 text-white" />
-                  <Play v-else class="w-6 h-6 text-white fill-current" />
+                <!-- Play Icon Hover Overlay (Solid Non-Blur) -->
+                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center pointer-events-none z-30">
+                  <div class="w-12 h-12 md:w-14 md:h-14 rounded-full bg-white text-black shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-center justify-center pl-0.5 scale-75 group-hover:scale-100 transition-transform duration-300 ease-out transform-gpu pointer-events-auto hover:scale-110">
+                    <Lock v-if="!isLoggedIn" class="w-5 h-5 text-black" />
+                    <Play v-else class="w-5 h-5 text-black fill-current" />
+                  </div>
                 </div>
-              </div>
-              <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-4 h-4 text-white" /></button>
-                <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Plus v-else class="w-4 h-4 text-white" /></button>
-                <button @click.stop="handleRemoveHistory(movie)" class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20 transition-colors"><X class="w-4 h-4 text-white" /></button>
+                <!-- Actions Top Right -->
+                <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                  <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors shadow-lg"><Info class="w-4 h-4 text-white" /></button>
+                  <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors shadow-lg"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Plus v-else class="w-4 h-4 text-white" /></button>
+                  <button @click.stop="handleRemoveHistory(movie)" class="p-2 bg-black/60 hover:bg-red-600 rounded-full border border-white/20 transition-colors shadow-lg"><X class="w-4 h-4 text-white" /></button>
+                </div>
               </div>
             </div>
           </div>
@@ -2494,8 +2802,7 @@ onUnmounted(() => {
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3 "><span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> {{ category.title }}</h3>
           
           <div 
-            :class="['flex gap-6 overflow-x-auto hide-scrollbar pb-10 pt-4  hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)] transition-shadow duration-1200 snap-x', category.layout === 'hero-card' ? 'hero-card-carousel' : '']" 
-            style="padding-bottom: 20px; padding-top: 40px;"
+            :class="['flex gap-6 overflow-x-auto hide-scrollbar pb-20 pt-10 transition-shadow duration-1200 snap-x', uiMode === 'classic' ? 'hover:shadow-[inset_0_-200px_200px_rgba(59,130,246,0.19)]' : '', category.layout === 'hero-card' ? 'hero-card-carousel' : '']" 
             @mouseenter="category.layout === 'hero-card' ? (isHoveringHeroCard = true) : null"
             @mouseleave="category.layout === 'hero-card' ? (isHoveringHeroCard = false) : null"
             @touchstart="category.layout === 'hero-card' ? (isHoveringHeroCard = true) : null"
@@ -2503,53 +2810,129 @@ onUnmounted(() => {
           >
           <div v-for="movie in category.movies" :key="movie.id" @click="openPlayer(movie)" 
               :class="[
-                'relative flex-none rounded-2xl overflow-hidden bg-[#18181b] transition-transform transition-opacity duration-500 hover:scale-105 hover:-translate-y-2 hover:z-40 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transform-gpu group ring-1 ring-white/5 cursor-pointer snap-center',
-                category.layout === 'hero-card' ? 'w-[85vw] md:w-[700px] aspect-video md:aspect-[21/9]' :
-                category.layout === 'portrait' ? 'w-[150px] md:w-[220px] aspect-[2/3]' :
-                'w-[300px] md:w-[390px] aspect-video'
+                'relative flex-none transition-transform transition-opacity duration-500 transform-gpu group cursor-pointer snap-center hover:z-40',
+                category.layout === 'hero-card' ? 'w-[85vw] md:w-[700px]' :
+                category.layout === 'portrait' ? 'w-[150px] md:w-[220px]' :
+                'w-[300px] md:w-[390px]',
+                uiMode === 'classic' ? (category.layout === 'hero-card' ? 'aspect-video md:aspect-[21/9]' : category.layout === 'portrait' ? 'aspect-[2/3]' : 'aspect-video') : '',
+                uiMode === 'classic' ? 'hover:scale-105 hover:-translate-y-2' : ''
               ]">
               
-              <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
-              
-              <img :src="getImageUrl(
-                 category.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 
-                 category.layout === 'portrait' ? 'w500' : 'w780')" 
-                 loading="lazy"
-                 decoding="async"
-                 class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
-                 style="opacity: 0; transform: scale(1.02);"
-                 @load="handleImageLoad"
-              />
-              
-              <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 md:p-8 flex flex-col justify-end" :class="category.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/90 via-black/30'">
-                <div class="mb-1.5 flex items-center gap-3 flex-wrap" :class="category.layout === 'portrait' ? 'justify-center' : ''">
-                  <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[category.layout === 'hero-card' ? 'max-w-[180px] md:max-w-[280px] max-h-[55px] md:max-h-[75px]' : category.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-lg transition-transform group-hover:scale-105 origin-left" />
-                  <h4 v-else :class="[category.layout === 'hero-card' ? 'text-xl md:text-3xl font-black' : category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1']" class="font-black uppercase tracking-tighter drop-shadow-md text-white">{{ movie.title || movie.name }}</h4>
+              <!-- === CLASSIC UI === -->
+              <div v-if="uiMode === 'classic'" class="absolute inset-0 rounded-2xl overflow-hidden bg-[#18181b] ring-1 ring-white/5 hover:shadow-[0_0_60px_rgba(59,130,246,0.18)] transition-shadow duration-500">
+                <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+                
+                <img :src="getImageUrl(
+                   category.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 
+                   category.layout === 'portrait' ? 'w500' : 'w780')" 
+                   loading="lazy"
+                   decoding="async"
+                   class="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-transform transition-opacity duration-700 group-hover:scale-105" 
+                   style="opacity: 0; transform: scale(1.02);"
+                   @load="handleImageLoad"
+                />
+                
+                <div class="absolute inset-0 bg-gradient-to-t to-transparent p-5 md:p-8 flex flex-col justify-end" :class="category.layout === 'portrait' ? 'from-black/90 via-black/40 items-center text-center' : 'from-black/90 via-black/30'">
+                  <div class="mb-1.5 flex items-center gap-3 flex-wrap" :class="category.layout === 'portrait' ? 'justify-center' : ''">
+                    <img loading="lazy" decoding="async" v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" :class="[category.layout === 'hero-card' ? 'max-w-[180px] md:max-w-[280px] max-h-[55px] md:max-h-[75px]' : category.layout === 'portrait' ? 'max-w-[100px] max-h-[35px]' : 'max-w-[140px] max-h-[45px]']" class="object-contain drop-shadow-lg transition-transform group-hover:scale-105 origin-left" />
+                    <h4 v-else :class="[category.layout === 'hero-card' ? 'text-xl md:text-3xl font-black' : category.layout === 'portrait' ? 'text-xs md:text-sm line-clamp-2' : 'text-sm md:text-base line-clamp-1']" class="font-black uppercase tracking-tighter drop-shadow-md text-white">{{ movie.title || movie.name }}</h4>
 
-                  <!-- Year Badge ONLY for hero-card layout next to title/logo -->
-                  <div v-if="category.layout === 'hero-card' && (movie.release_date || movie.first_air_date)" class="px-2.5 py-0.5 rounded-md flex items-center gap-1 text-[11px] md:text-xs text-white/90 bg-black/60 border border-white/20 shadow-md backdrop-blur-sm font-black">
-                    <span>{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                    <div v-if="category.layout === 'hero-card' && (movie.release_date || movie.first_air_date)" class="px-2.5 py-0.5 rounded-md flex items-center gap-1 text-[11px] md:text-xs text-white/90 bg-black/60 border border-white/20 shadow-md backdrop-blur-sm font-black">
+                      <span>{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                    </div>
+                  </div>
+
+                  <p v-if="category.layout === 'hero-card' && movie.overview" class="text-[11px] md:text-xs text-gray-300/90 line-clamp-2 md:line-clamp-3 max-w-lg mb-2 drop-shadow-md font-medium leading-relaxed">
+                    {{ movie.overview }}
+                  </p>
+
+                  <div v-if="category.layout !== 'hero-card'" class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
+                    <div class="px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-black/60 border border-white/20 shadow-md">
+                      <span class="text-[11px] md:text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                    </div> 
                   </div>
                 </div>
-
-                <!-- Movie Description for hero-card layout -->
-                <p v-if="category.layout === 'hero-card' && movie.overview" class="text-[11px] md:text-xs text-gray-300/90 line-clamp-2 md:line-clamp-3 max-w-lg mb-2 drop-shadow-md font-medium leading-relaxed">
-                  {{ movie.overview }}
-                </p>
-
-                <!-- Year Badge for non-hero-card layouts (portrait & standard landscape) -->
-                <div v-if="category.layout !== 'hero-card'" class="flex items-center gap-3 text-[10px] font-black text-gray-400 mt-1 opacity-0 group-hover:opacity-100 transition-transform transition-opacity duration-500 translate-y-2 group-hover:translate-y-0">
-                  <div class="px-2 py-0.5 rounded-md flex items-center gap-1 text-[10px] md:text-[11px] text-white bg-black/60 border border-white/20 shadow-md">
-                    <span class="text-[11px] md:text-[12px]">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
-                  </div> 
+                 
+                <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                   <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
+                   <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-3 h-3 md:w-4 md:h-4 text-green-400" /><Plus v-else class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
                 </div>
               </div>
-               
-               <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
-                 <button @click.stop="openInfo(movie)" class="p-2 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors"><Info class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
-                 <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/60 hover:bg-blue-500/60 rounded-full border border-white/20 transition-colors"><Check v-if="watchlist.has(movie.id)" class="w-3 h-3 md:w-4 md:h-4 text-green-400" /><Plus v-else class="w-3 h-3 md:w-4 md:h-4 text-white" /></button>
-               </div>
-             </div>
+
+              <!-- === VISION PRO SPATIAL UI (MODERN STACK - GPU OPTIMIZED TRANSITIONS) === -->
+              <div v-else class="flex flex-col w-full relative" :class="category.layout === 'hero-card' ? 'w-full h-[320px] md:h-[380px] group-hover:-translate-y-2 transition-transform duration-500 transform-gpu' : 'p-2.5 rounded-[2.2rem] bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] hover:border-white/20 transition-[transform,background-color,border-color] duration-300 group-hover:-translate-y-2 cursor-pointer transform-gpu'">
+                
+                <!-- Hero Card Specific Modern Layout -->
+                <template v-if="category.layout === 'hero-card'">
+                  <div class="absolute inset-0 rounded-[2.8rem] overflow-hidden border border-white/20 shadow-2xl bg-black/40">
+                     <img :src="getImageUrl(movie.backdrop_path || movie.poster_path, 'w1280')" class="w-full h-full object-cover transition-transform duration-[1000ms] group-hover:scale-105" />
+                     <div class="absolute inset-0 bg-gradient-to-t from-[#050507] via-black/30 to-transparent"></div>
+                     <div class="absolute bottom-0 left-0 p-8 md:p-12 w-full flex flex-col justify-end">
+                       <img v-if="movie.logo_path" :src="getImageUrl(movie.logo_path, 'w500')" class="max-w-[200px] md:max-w-[300px] max-h-[60px] md:max-h-[80px] object-contain drop-shadow-2xl mb-3 origin-left transition-transform duration-500 group-hover:scale-105" />
+                       <h3 v-else class="text-2xl md:text-5xl font-black uppercase tracking-tight drop-shadow-xl text-white mb-2">{{ movie.title || movie.name }}</h3>
+                       <p class="text-xs md:text-sm text-white/80 line-clamp-2 md:line-clamp-3 max-w-xl mb-4 drop-shadow-lg font-medium">{{ movie.overview }}</p>
+                       <div class="flex items-center gap-3">
+                         <span class="px-3 py-1 rounded-full bg-white/20 backdrop-blur-md border border-white/30 text-xs font-bold text-white">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}</span>
+                         <span v-if="movie.vote_average" class="px-3 py-1 rounded-full bg-emerald-500/20 backdrop-blur-md border border-emerald-500/40 text-emerald-400 text-xs font-black shadow-[0_0_15px_rgba(16,185,129,0.3)]">{{ Math.round(movie.vote_average * 10) }}% Match</span>
+                       </div>
+                     </div>
+                     <div class="absolute top-6 right-6 flex items-center gap-3">
+                       <button @click.stop="openInfo(movie)" class="p-3 bg-black/40 backdrop-blur-xl hover:bg-white/20 rounded-full border border-white/20 transition-colors shadow-2xl"><Info class="w-5 h-5 text-white" /></button>
+                     </div>
+                  </div>
+                </template>
+
+                <!-- Standard Vertical/Horizontal Cards (Non-Hero) -->
+                <template v-else>
+                  <!-- Image Container with Vision OS Spatial Frame -->
+                  <div class="relative w-full rounded-[1.6rem] overflow-hidden bg-black/50 flex-none transform-gpu"
+                       :class="category.layout === 'portrait' ? 'aspect-[2/3]' : 'aspect-video'">
+                    <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+                    
+                    <img :src="getImageUrl(
+                       category.layout === 'portrait' ? (movie.poster_path || movie.backdrop_path) : (movie.backdrop_path || movie.poster_path), 
+                       category.layout === 'portrait' ? 'w500' : 'w780')" 
+                       loading="lazy"
+                       decoding="async"
+                       class="w-full h-full object-cover transition-transform duration-500 ease-out transform-gpu will-change-transform group-hover:scale-104" 
+                       @load="handleImageLoad"
+                    />
+
+                    <!-- Green Match Badge Floating Top-Left -->
+                    <div v-if="movie.vote_average" class="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-emerald-500/40 text-emerald-400 font-black text-[11px] shadow-lg">
+                      {{ Math.round(movie.vote_average * 10) }}%
+                    </div>
+                    
+                    <!-- Play Icon Overlay on Hover (Solid Non-Blur) -->
+                    <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center pointer-events-none">
+                      <div class="w-12 h-12 md:w-16 md:h-16 rounded-full bg-white text-black shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-center justify-center pl-1 scale-75 group-hover:scale-100 transition-transform duration-300 ease-out transform-gpu pointer-events-auto hover:scale-110">
+                        <Play class="w-5 h-5 md:w-7 md:h-7 text-black fill-current" />
+                      </div>
+                    </div>
+
+                    <!-- Actions Top Right -->
+                    <div class="absolute top-3 right-3 z-20 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                       <button @click.stop="openInfo(movie)" class="p-2 bg-black/50 backdrop-blur-md hover:bg-white/30 rounded-full border border-white/20 transition-colors shadow-lg"><Info class="w-4 h-4 text-white" /></button>
+                       <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/50 backdrop-blur-md hover:bg-white/30 rounded-full border border-white/20 transition-colors shadow-lg"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Plus v-else class="w-4 h-4 text-white" /></button>
+                    </div>
+                  </div>
+
+                  <!-- Text Below Image (Vision OS Spatial Typography) -->
+                  <div class="mt-3 px-1 flex flex-col justify-center relative">
+                    <h4 class="text-[14px] md:text-[15px] font-extrabold text-white tracking-tight line-clamp-1 group-hover:text-blue-300 transition-colors drop-shadow-sm">{{ movie.title || movie.name }}</h4>
+                    <div class="flex items-center gap-2 text-[10px] md:text-[11px] font-bold text-white/50 tracking-wider mt-1">
+                      <span v-if="(movie.release_date || movie.first_air_date)" class="px-2 py-0.5 rounded-md bg-white/10 text-white/80 font-bold">
+                        {{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}
+                      </span>
+                      <span class="uppercase text-white/50 tracking-widest text-[9px] font-extrabold">
+                        {{ movie.media_type === 'tv' ? 'Series' : 'Movie' }}
+                      </span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+
+            </div>
            </div>
          </section>
 
@@ -2687,7 +3070,7 @@ onUnmounted(() => {
          </section>
 
         <!-- VIORA Monumental Scroll-Driven Typography Reveal (VIORA.) -->
-        <section v-if="currentView === 'home'" class="relative pt-28 pb-16 px-4 md:px-8 overflow-hidden border-t border-white/5 bg-black">
+        <section v-if="currentView === 'home'" class="relative pt-28 pb-16 px-4 md:px-8 overflow-hidden border-t border-white/5 bg-transparent">
           <div class="relative z-10 w-full max-w-[1400px] mx-auto flex flex-col items-center text-center">
             <!-- MONUMENTAL UNIFIED GIANT WORDMARK VIORA. WITH ULTRA-SMOOTH GPU SCROLL REVEAL -->
             <div class="my-8 overflow-hidden py-4 flex items-baseline justify-center select-none transform-gpu gap-1 sm:gap-2 md:gap-3 lg:gap-4">
@@ -2774,115 +3157,160 @@ onUnmounted(() => {
 
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6 auto-rows-max">
               <template v-for="(movie, index) in browseItems" :key="movie.id">
-                <!-- Large Horizontal Featured Card (index % 9 === 0) -->
-                <div v-if="index % 9 === 0" class="col-span-2 sm:col-span-2 md:col-span-4 lg:col-span-2 relative overflow-hidden rounded-[2rem] bg-[#1a1a1c] p-2 flex flex-col group cursor-pointer ring-1 ring-white/10 hover:ring-white/30 transition-all duration-300 transform-gpu aspect-[4/3] md:aspect-[8/3] lg:aspect-auto lg:h-full" style="content-visibility: auto; contain-intrinsic-size: auto 300px;" @click="openInfo(movie)">
-                  
-                  <div class="skeleton-overlay absolute inset-2 bg-[#27272a]/60 animate-pulse rounded-[1.5rem] transition-opacity duration-500 z-0 opacity-100 group-hover:opacity-0"></div>
-                  
-                  <img 
-                    :src="getImageUrl(movie.backdrop_path || movie.poster_path, 'w780')" 
-                    loading="lazy"
-                    decoding="async"
-                    class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out z-0 rounded-[1.5rem]" 
-                    style="opacity: 0;"  
-                    @load="handleImageLoad"
-                  />
-                  
-                  <!-- The Glass Mask -->
-                  <div class="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/95 via-black/40 to-transparent z-10 pointer-events-none rounded-b-[1.5rem]"></div>
-                  
-                  <!-- The Drawer -->
-                  <div class="relative z-20 mt-auto p-4 md:p-6 flex flex-col justify-end translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out">
-                    <img loading="lazy" decoding="async" 
-                      v-if="movie.logo_path" 
-                      :src="getImageUrl(movie.logo_path, 'w500')" 
-                      class="max-w-[200px] max-h-[70px] object-contain drop-shadow-2xl mb-2 origin-left scale-95 group-hover:scale-100 transition-transform duration-500" 
-                    />
-                    <h3 
-                      v-else 
-                      class="text-xl md:text-3xl font-black uppercase tracking-tighter text-white drop-shadow-lg mb-2 line-clamp-2"
-                    >
-                      {{ movie.title || movie.name }}
-                    </h3>
-                    <p class="text-[11px] md:text-xs text-gray-300/90 font-medium leading-relaxed line-clamp-2 md:line-clamp-3 mb-4 max-w-md drop-shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">{{ movie.overview }}</p>
-                    <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-200">
-                       <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-5 py-2 md:px-6 md:py-2.5 text-white font-bold text-xs md:text-sm transition-colors shadow-lg pointer-events-auto flex items-center gap-2" @click.stop="openPlayer(movie)">
-                          <Lock v-if="!isLoggedIn" class="w-4 h-4 md:w-5 md:h-5" />
-                          <Play v-else class="w-4 h-4 md:w-5 md:h-5 fill-current" />
-                          <span>{{ !isLoggedIn ? 'Locked' : 'Play' }}</span>
-                       </button>
-                    </div>
-                  </div>
-                  
-                  <!-- Top Right Buttons -->
-                  <div class="absolute top-4 right-4 z-20 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <button @click.stop="openInfo(movie)" class="p-1.5 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
-                      <Info class="w-3 h-3 text-white" />
-                    </button>
-                    <button @click.stop="handleWatchlistToggle(movie)" class="p-1.5 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20">
-                      <Check v-if="watchlist.has(movie.id)" class="w-3 h-3 text-green-400" />
-                      <Bookmark v-else class="w-3 h-3 text-white" />
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Vertical Card with Expanding Content (Zero Reflow GPU Optimized Illusion) -->
-                <div v-else class="col-span-1 relative overflow-hidden rounded-[2rem] bg-[#1a1a1c] p-2 flex flex-col group cursor-pointer ring-1 ring-white/10 hover:ring-white/30 transition-colors duration-300 aspect-[2/3] hover:shadow-[0_0_60px_rgba(59,130,246,0.15)] transform-gpu" style="content-visibility: auto; contain-intrinsic-size: auto 300px;" @click="openInfo(movie)">
-                  
-                  <!-- Inner Container to clip the image and drawer strictly inside the padding -->
-                  <div class="relative w-full h-full rounded-[1.5rem] overflow-hidden transform-gpu">
+                
+                <!-- === CLASSIC UI === -->
+                <template v-if="uiMode === 'classic'">
+                  <!-- Large Horizontal Featured Card (index % 9 === 0) -->
+                  <div v-if="index % 9 === 0" class="col-span-2 sm:col-span-2 md:col-span-4 lg:col-span-2 relative overflow-hidden rounded-[2rem] bg-[#1a1a1c] p-2 flex flex-col group cursor-pointer ring-1 ring-white/10 hover:ring-white/30 transition-all duration-300 transform-gpu aspect-[4/3] md:aspect-[8/3] lg:aspect-auto lg:h-full" style="content-visibility: auto; contain-intrinsic-size: auto 300px;" @click="openInfo(movie)">
                     
-                    <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0 opacity-100 group-hover:opacity-0"></div>
+                    <div class="skeleton-overlay absolute inset-2 bg-[#27272a]/60 animate-pulse rounded-[1.5rem] transition-opacity duration-500 z-0 opacity-100 group-hover:opacity-0"></div>
                     
-                    <!-- Image scales purely via GPU (zero reflow) -->
                     <img 
-                      :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" 
+                      :src="getImageUrl(movie.backdrop_path || movie.poster_path, 'w780')" 
                       loading="lazy"
                       decoding="async"
-                      class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out z-0 will-change-transform" 
+                      class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-in-out z-0 rounded-[1.5rem]" 
                       style="opacity: 0;"  
                       @load="handleImageLoad"
                     />
                     
-                    <!-- Glass blur mask at the bottom before hover (Fade only, no translate) -->
-                    <div class="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10 group-hover:opacity-0 transition-opacity duration-500 pointer-events-none will-change-opacity"></div>
-
-                    <!-- The Drawer (Transparent gradient sliding up OVER the image) -->
-                    <div class="absolute inset-x-0 bottom-0 p-2 pt-16 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/70 to-transparent z-20 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-500 ease-out will-change-transform">
+                    <!-- The Glass Mask -->
+                    <div class="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/95 via-black/40 to-transparent z-10 pointer-events-none rounded-b-[1.5rem]"></div>
+                    
+                    <!-- The Drawer -->
+                    <div class="relative z-20 mt-auto p-4 md:p-6 flex flex-col justify-end translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out">
                       <img loading="lazy" decoding="async" 
                         v-if="movie.logo_path" 
-                        :src="getImageUrl(movie.logo_path, 'w300')" 
-                        class="max-w-[120px] max-h-[35px] object-contain drop-shadow-lg opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 origin-left" 
+                        :src="getImageUrl(movie.logo_path, 'w500')" 
+                        class="max-w-[200px] max-h-[70px] object-contain drop-shadow-2xl mb-2 origin-left scale-95 group-hover:scale-100 transition-transform duration-500" 
                       />
-                      <h4 
+                      <h3 
                         v-else 
-                        class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 text-white opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500"
+                        class="text-xl md:text-3xl font-black uppercase tracking-tighter text-white drop-shadow-lg mb-2 line-clamp-2"
                       >
                         {{ movie.title || movie.name }}
-                      </h4>
-                      
-                      <div class="flex justify-between items-end mt-2 mb-1 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 delay-100">
-                         <span class="text-xs font-bold text-gray-300">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) || '' }}</span>
-                         <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-3 py-1.5 text-white font-bold text-[11px] transition-colors shadow-md pointer-events-auto flex items-center gap-1.5" @click.stop="openPlayer(movie)">
-                            <Lock v-if="!isLoggedIn" class="w-3 h-3" />
-                            <Play v-else class="w-3 h-3 fill-current" />
+                      </h3>
+                      <p class="text-[11px] md:text-xs text-gray-300/90 font-medium leading-relaxed line-clamp-2 md:line-clamp-3 mb-4 max-w-md drop-shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">{{ movie.overview }}</p>
+                      <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-200">
+                         <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-5 py-2 md:px-6 md:py-2.5 text-white font-bold text-xs md:text-sm transition-colors shadow-lg pointer-events-auto flex items-center gap-2" @click.stop="openPlayer(movie)">
+                            <Lock v-if="!isLoggedIn" class="w-4 h-4 md:w-5 md:h-5" />
+                            <Play v-else class="w-4 h-4 md:w-5 md:h-5 fill-current" />
                             <span>{{ !isLoggedIn ? 'Locked' : 'Play' }}</span>
                          </button>
                       </div>
                     </div>
+                    
+                    <!-- Top Right Buttons -->
+                    <div class="absolute top-4 right-4 z-20 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <button @click.stop="openInfo(movie)" class="p-1.5 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
+                        <Info class="w-3 h-3 text-white" />
+                      </button>
+                      <button @click.stop="handleWatchlistToggle(movie)" class="p-1.5 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20">
+                        <Check v-if="watchlist.has(movie.id)" class="w-3 h-3 text-green-400" />
+                        <Bookmark v-else class="w-3 h-3 text-white" />
+                      </button>
+                    </div>
                   </div>
-                  
-                  <!-- Top Right Action Buttons -->
-                  <div class="absolute top-4 right-4 z-20 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <button @click.stop="openInfo(movie)" class="p-1.5 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
-                      <Info class="w-3 h-3 text-white" />
-                    </button>
-                    <button @click.stop="handleWatchlistToggle(movie)" class="p-1.5 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20">
-                      <Check v-if="watchlist.has(movie.id)" class="w-3 h-3 text-green-400" />
-                      <Bookmark v-else class="w-3 h-3 text-white" />
-                    </button>
+  
+                  <!-- Vertical Card with Expanding Content (Zero Reflow GPU Optimized Illusion) -->
+                  <div v-else class="col-span-1 relative overflow-hidden rounded-[2rem] bg-[#1a1a1c] p-2 flex flex-col group cursor-pointer ring-1 ring-white/10 hover:ring-white/30 transition-colors duration-300 aspect-[2/3] hover:shadow-[0_0_60px_rgba(59,130,246,0.15)] transform-gpu" style="content-visibility: auto; contain-intrinsic-size: auto 300px;" @click="openInfo(movie)">
+                    
+                    <!-- Inner Container to clip the image and drawer strictly inside the padding -->
+                    <div class="relative w-full h-full rounded-[1.5rem] overflow-hidden transform-gpu">
+                      
+                      <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0 opacity-100 group-hover:opacity-0"></div>
+                      
+                      <!-- Image scales purely via GPU (zero reflow) -->
+                      <img 
+                        :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" 
+                        loading="lazy"
+                        decoding="async"
+                        class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out z-0 will-change-transform" 
+                        style="opacity: 0;"  
+                        @load="handleImageLoad"
+                      />
+                      
+                      <!-- Glass blur mask at the bottom before hover (Fade only, no translate) -->
+                      <div class="absolute inset-x-0 bottom-0 h-[40%] bg-gradient-to-t from-black/80 via-black/40 to-transparent z-10 group-hover:opacity-0 transition-opacity duration-500 pointer-events-none will-change-opacity"></div>
+  
+                      <!-- The Drawer (Transparent gradient sliding up OVER the image) -->
+                      <div class="absolute inset-x-0 bottom-0 p-2 pt-16 flex flex-col justify-end bg-gradient-to-t from-black/95 via-black/70 to-transparent z-20 translate-y-[100%] group-hover:translate-y-0 transition-transform duration-500 ease-out will-change-transform">
+                        <img loading="lazy" decoding="async" 
+                          v-if="movie.logo_path" 
+                          :src="getImageUrl(movie.logo_path, 'w300')" 
+                          class="max-w-[120px] max-h-[35px] object-contain drop-shadow-lg opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 origin-left" 
+                        />
+                        <h4 
+                          v-else 
+                          class="text-sm md:text-base font-black uppercase tracking-tighter line-clamp-2 text-white opacity-0 -translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500"
+                        >
+                          {{ movie.title || movie.name }}
+                        </h4>
+                        
+                        <div class="flex justify-between items-end mt-2 mb-1 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 delay-100">
+                           <span class="text-xs font-bold text-gray-300">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) || '' }}</span>
+                           <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-3 py-1.5 text-white font-bold text-[11px] transition-colors shadow-md pointer-events-auto flex items-center gap-1.5" @click.stop="openPlayer(movie)">
+                              <Lock v-if="!isLoggedIn" class="w-3 h-3" />
+                              <Play v-else class="w-3 h-3 fill-current" />
+                              <span>{{ !isLoggedIn ? 'Locked' : 'Play' }}</span>
+                           </button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <!-- Top Right Action Buttons -->
+                    <div class="absolute top-4 right-4 z-20 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                      <button @click.stop="openInfo(movie)" class="p-1.5 bg-black/60 hover:bg-gray-500/60 rounded-full border border-white/20 transition-colors">
+                        <Info class="w-3 h-3 text-white" />
+                      </button>
+                      <button @click.stop="handleWatchlistToggle(movie)" class="p-1.5 bg-black/60 hover:bg-red-600/80 rounded-full transition-colors border border-white/20">
+                        <Check v-if="watchlist.has(movie.id)" class="w-3 h-3 text-green-400" />
+                        <Bookmark v-else class="w-3 h-3 text-white" />
+                      </button>
+                    </div>
                   </div>
-                </div>
+                </template>
+
+                <!-- === VISION PRO SPATIAL UI (MODERN GRID - GPU OPTIMIZED TRANSITIONS) === -->
+                <template v-else>
+                  <div class="col-span-1 flex flex-col w-full h-full cursor-pointer group p-2.5 rounded-[2.2rem] bg-white/[0.04] border border-white/10 hover:bg-white/[0.08] hover:border-white/20 transition-[transform,background-color,border-color] duration-300 hover:-translate-y-2 transform-gpu" @click="openInfo(movie)">
+                    <div class="relative w-full rounded-[1.6rem] overflow-hidden bg-black/50 aspect-[2/3] flex-none transform-gpu">
+                      <div class="skeleton-overlay absolute inset-0 bg-[#27272a]/60 animate-pulse transition-opacity duration-500 z-0"></div>
+                      <img :src="getImageUrl(movie.poster_path || movie.backdrop_path, 'w500')" loading="lazy" decoding="async" class="w-full h-full object-cover transition-transform duration-500 ease-out transform-gpu will-change-transform group-hover:scale-104" @load="handleImageLoad" />
+                      
+                      <!-- Green Match Badge Floating Top-Left -->
+                      <div v-if="movie.vote_average" class="absolute top-3 left-3 z-10 px-2.5 py-1 rounded-full bg-black/70 backdrop-blur-md border border-emerald-500/40 text-emerald-400 font-black text-[11px] shadow-lg">
+                        {{ Math.round(movie.vote_average * 10) }}%
+                      </div>
+
+                      <!-- Play Icon Overlay on Hover (Solid Non-Blur) -->
+                      <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center pointer-events-none">
+                        <div class="w-12 h-12 md:w-16 md:h-16 rounded-full bg-white text-black shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-center justify-center pl-1 scale-75 group-hover:scale-100 transition-transform duration-300 ease-out transform-gpu pointer-events-auto hover:scale-110">
+                          <Play class="w-5 h-5 md:w-7 md:h-7 text-black fill-current" />
+                        </div>
+                      </div>
+
+                      <div class="absolute top-3 right-3 z-20 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                         <button @click.stop="openInfo(movie)" class="p-2 bg-black/50 backdrop-blur-md hover:bg-white/30 rounded-full border border-white/20 transition-colors shadow-lg"><Info class="w-4 h-4 text-white" /></button>
+                         <button @click.stop="handleWatchlistToggle(movie, movie.media_type)" class="p-2 bg-black/50 backdrop-blur-md hover:bg-white/30 rounded-full border border-white/20 transition-colors shadow-lg"><Check v-if="watchlist.has(movie.id)" class="w-4 h-4 text-green-400" /><Plus v-else class="w-4 h-4 text-white" /></button>
+                      </div>
+                    </div>
+
+                    <!-- Text Below Image (Vision OS Spatial Typography) -->
+                    <div class="mt-3 px-2 pb-1 flex flex-col flex-1 justify-center relative">
+                      <h4 class="text-[14px] md:text-[15px] font-extrabold text-white tracking-tight line-clamp-1 group-hover:text-blue-300 transition-colors drop-shadow-sm">{{ movie.title || movie.name }}</h4>
+                      <div class="flex items-center gap-2 text-[10px] md:text-[11px] font-bold text-white/50 tracking-wider mt-1">
+                        <span v-if="(movie.release_date || movie.first_air_date)" class="px-2 py-0.5 rounded-md bg-white/10 text-white/80 font-bold">
+                          {{ (movie.release_date || movie.first_air_date)?.substring(0,4) }}
+                        </span>
+                        <span class="uppercase text-white/50 tracking-widest text-[9px] font-extrabold">
+                          {{ movie.media_type === 'tv' ? 'Series' : 'Movie' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
               </template>
             </div>
 
@@ -3152,6 +3580,48 @@ onUnmounted(() => {
 .hide-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .hide-scrollbar::-webkit-scrollbar-thumb { background: rgba(59,130,246,0.3); border-radius: 999px; transition: all 0.3s ease; }
 .hide-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(59,130,246,0.7); }
+
+/* UI Switcher Preloader Reveal Animations */
+@keyframes preloaderLetterReveal {
+  0% {
+    transform: translateY(120%) scale(0.7);
+    opacity: 0;
+    filter: blur(8px);
+  }
+  60% {
+    transform: translateY(-10%) scale(1.05);
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes preloaderBar {
+  0% {
+    width: 0%;
+  }
+  25% {
+    width: 30%;
+  }
+  75% {
+    width: 85%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.animate-reveal-v { animation: preloaderLetterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards; }
+.animate-reveal-i { animation: preloaderLetterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards; }
+.animate-reveal-o { animation: preloaderLetterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.25s forwards; }
+.animate-reveal-r { animation: preloaderLetterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.35s forwards; }
+.animate-reveal-a { animation: preloaderLetterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.45s forwards; }
+.animate-reveal-dot { animation: preloaderLetterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.55s forwards; }
+.animate-loading-bar { animation: preloaderBar 1.25s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
 
 /* LIQUID GLASS STYLES */
 .liquidGlass-wrapper {
