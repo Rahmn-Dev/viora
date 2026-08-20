@@ -1,7 +1,7 @@
 <script setup>
 
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, Menu, Maximize, Minimize, Lock } from 'lucide-vue-next';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, Menu, Maximize, Minimize, Lock, Subtitles, Volume2, CheckCircle2, CreditCard, QrCode, Building2, Globe, DollarSign, Printer, KeyRound, Save } from 'lucide-vue-next';
 import Lenis from 'lenis';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
@@ -16,21 +16,24 @@ const api = axios.create({
 // Simpan CSRF token di memory untuk dikirim ulang
 let currentCsrfToken = '';
 
-// Interceptor Request: Masukkan CSRF Token ke header
+const getCsrfFromCookie = () => {
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; csrftoken=`);
+  if (parts.length === 2) return parts.pop().split(';').shift();
+  return null;
+};
+
+// Interceptor Request: Selalu ambil CSRF Token TERBARU dari Cookie atau Memory
 api.interceptors.request.use(config => {
-  if (currentCsrfToken) {
-    config.headers['X-CSRFToken'] = currentCsrfToken;
-  } else {
-    // Fallback baca cookie (berguna saat local dev)
-    const match = document.cookie.match(/(^|;\\s*)csrftoken=([^;]*)/);
-    if (match) {
-      config.headers['X-CSRFToken'] = match[2];
-    }
+  const cookieCsrf = getCsrfFromCookie();
+  const tokenToUse = cookieCsrf || currentCsrfToken;
+  if (tokenToUse) {
+    config.headers['X-CSRFToken'] = tokenToUse;
   }
   return config;
 });
 
-// Interceptor Response: Tangkap CSRF Token baru dari backend
+// Interceptor Response: Tangkap CSRF Token baru & Auto-Retry 403 CSRF Failure
 api.interceptors.response.use(
   res => {
     if (res.data && res.data.csrf_token) {
@@ -38,12 +41,35 @@ api.interceptors.response.use(
     }
     return res;
   },
-  (err) => {
+  async (err) => {
     if (err.response?.data?.csrf_token) {
       currentCsrfToken = err.response.data.csrf_token;
     }
+
+    // 🔥 Auto-Fix CSRF Failure (403 Forbidden / CSRF Failed)
+    const detail = String(err.response?.data?.detail || '');
+    const isCsrfError = err.response?.status === 403 && (detail.toLowerCase().includes('csrf') || detail.toLowerCase().includes('incorrect'));
+
+    if (isCsrfError && !err.config._retry) {
+      err.config._retry = true;
+      try {
+        const meRes = await api.get('/api/me/').catch(() => null);
+        if (meRes?.data?.csrf_token) {
+          currentCsrfToken = meRes.data.csrf_token;
+        }
+        const freshCsrf = getCsrfFromCookie() || currentCsrfToken;
+        if (freshCsrf) {
+          err.config.headers['X-CSRFToken'] = freshCsrf;
+        }
+        return api(err.config);
+      } catch (retryErr) {
+        return Promise.reject(retryErr);
+      }
+    }
+
     if (err.response?.status === 401 && !err.config?.url?.includes('/api/me/')) {
-      handleLogout();
+      isLoggedIn.value = false;
+      currentUser.value = { username: '' };
     }
     return Promise.reject(err);
   }
@@ -304,6 +330,7 @@ const isSearchingMore = ref(false); // Baru: Loading infinite scroll
 const hasMoreSearchResults = ref(true); // Baru: Cek kalau udah nyampe akhir
 
 const isLoggedIn = ref(false);
+const hasAccess = computed(() => isLoggedIn.value && currentUser.value && currentUser.value.vipPlan !== 'none');
 const currentUser = ref({ username: '' });
 const isLoginOpen = ref(false);
 const isProfileOpen = ref(false);
@@ -475,7 +502,601 @@ const embedUrl = ref('');
 
 const currentPlayState = ref(null);
 const isSettingsOpen = ref(false);
+const settingsActiveTab = ref('profile');
 const isCustomizationOpen = ref(false);
+
+// --- VIP MEMBERSHIP & PAYMENT GATEWAY STATE ---
+const isVIPModalOpen = ref(false);
+const isEmbeddedCheckoutOpen = ref(false);
+const isInvoiceModalOpen = ref(false);
+const isVIPSetupModalOpen = ref(false);
+const accountSetupMode = ref('new'); // 'new' | 'existing'
+const vipSetupData = ref({
+  username: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+  plan: 'annual',
+  expiryDate: '',
+  invoiceNo: '',
+  paymentGateway: 'Xendit Official Gateway'
+});
+const showVipPassword = ref(false);
+const showVipConfirmPassword = ref(false);
+const isEmailTouched = ref(false);
+const isConfirmPasswordTouched = ref(false);
+const vipSetupError = ref('');
+const profileForm = ref({ firstName: '', lastName: '', email: '' });
+const passwordForm = ref({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
+const showCurrentPasswordReset = ref(false);
+const showNewPasswordReset = ref(false);
+const showConfirmNewPasswordReset = ref(false);
+const profileSaveMessage = ref('');
+const profileSaveError = ref('');
+const passwordSaveMessage = ref('');
+const passwordSaveError = ref('');
+const isSavingProfile = ref(false);
+const isSavingPassword = ref(false);
+
+const initSettingsForm = () => {
+  profileForm.value = {
+    firstName: currentUser.value.firstName || currentUser.value.first_name || '',
+    lastName: currentUser.value.lastName || currentUser.value.last_name || '',
+    email: currentUser.value.email || `${currentUser.value.username}@viora.stream`
+  };
+  passwordForm.value = { currentPassword: '', newPassword: '', confirmNewPassword: '' };
+  profileSaveMessage.value = '';
+  profileSaveError.value = '';
+  passwordSaveMessage.value = '';
+  passwordSaveError.value = '';
+};
+
+const openSettingsModal = () => {
+  initSettingsForm();
+  settingsActiveTab.value = 'profile';
+  isSettingsOpen.value = true;
+};
+
+const handleSaveProfile = async () => {
+  isSavingProfile.value = true;
+  profileSaveMessage.value = '';
+  profileSaveError.value = '';
+  try {
+    const res = await api.post('/api/update-profile/', {
+      first_name: profileForm.value.firstName,
+      last_name: profileForm.value.lastName,
+      email: profileForm.value.email
+    });
+    currentUser.value.first_name = res.data.first_name;
+    currentUser.value.last_name = res.data.last_name;
+    currentUser.value.firstName = res.data.first_name;
+    currentUser.value.lastName = res.data.last_name;
+    currentUser.value.email = res.data.email;
+    localStorage.setItem('viora_user_data', JSON.stringify(currentUser.value));
+    profileSaveMessage.value = '✓ Profile details saved successfully!';
+    setTimeout(() => { profileSaveMessage.value = ''; }, 4000);
+  } catch (err) {
+    profileSaveError.value = err.response?.data?.detail || 'Failed to update profile details.';
+  } finally {
+    isSavingProfile.value = false;
+  }
+};
+
+const handleSavePassword = async () => {
+  if (!passwordForm.value.currentPassword) {
+    passwordSaveError.value = 'Please enter your current password.';
+    return;
+  }
+  if (!passwordForm.value.newPassword || passwordForm.value.newPassword.length < 6) {
+    passwordSaveError.value = 'New password must be at least 6 characters.';
+    return;
+  }
+  if (passwordForm.value.newPassword !== passwordForm.value.confirmNewPassword) {
+    passwordSaveError.value = 'New passwords do not match.';
+    return;
+  }
+  isSavingPassword.value = true;
+  passwordSaveMessage.value = '';
+  passwordSaveError.value = '';
+  try {
+    await api.post('/api/change-password/', {
+      current_password: passwordForm.value.currentPassword,
+      new_password: passwordForm.value.newPassword
+    });
+    passwordSaveMessage.value = '🔒 Password successfully changed!';
+    passwordForm.value = { currentPassword: '', newPassword: '', confirmNewPassword: '' };
+    setTimeout(() => { passwordSaveMessage.value = ''; }, 4000);
+  } catch (err) {
+    passwordSaveError.value = err.response?.data?.detail || 'Failed to change password. Verify your current password.';
+  } finally {
+    isSavingPassword.value = false;
+  }
+};
+const selectedVIPPlan = ref('annual'); // 'monthly' | 'annual'
+const selectedPaymentMethod = ref('xendit'); // 'xendit'
+const userCurrency = ref('USD'); // Default currency is USD ($)
+const paymentCardData = ref({
+  cardNumber: '4532 8912 3456 7890',
+  expiry: '12/28',
+  cvc: '888',
+  name: 'VIORA STREAMER'
+});
+const cardValidationError = ref('');
+const isProcessingPayment = ref(false);
+const isPaymentPaidSuccess = ref(false);
+const paymentSuccessMessage = ref('');
+const activeXenditInvoiceId = ref('');
+const activeCheckoutToken = ref('');
+const activeXenditInvoiceUrl = ref('');
+const xenditPollingTimer = ref(null);
+
+// --- LUHN ALGORITHM & CARD VALIDATION ---
+const isValidLuhn = (cardNumberStr) => {
+  const digits = cardNumberStr.replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits.charAt(i), 10);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return (sum % 10) === 0;
+};
+
+const cardBrand = computed(() => {
+  const digits = paymentCardData.value.cardNumber.replace(/\D/g, '');
+  if (digits.startsWith('4')) return 'Visa';
+  if (/^(5[1-5]|2[2-7])/.test(digits)) return 'MasterCard';
+  if (/^3[47]/.test(digits)) return 'Amex';
+  if (/^6(?:011|5)/.test(digits)) return 'Discover';
+  return digits.length > 0 ? 'Card' : '';
+});
+
+const handleCardNumberInput = (e) => {
+  let val = e.target.value.replace(/\D/g, '').slice(0, 16);
+  let formatted = val.match(/.{1,4}/g)?.join(' ') || val;
+  paymentCardData.value.cardNumber = formatted;
+  cardValidationError.value = '';
+  e.target.value = formatted;
+};
+
+const handleExpiryInput = (e) => {
+  let digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length >= 3) {
+    digits = digits.slice(0, 2) + '/' + digits.slice(2);
+  }
+  paymentCardData.value.expiry = digits;
+  cardValidationError.value = '';
+  e.target.value = digits;
+};
+
+const isEmailValid = computed(() => {
+  if (!vipSetupData.value.email) return false;
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(vipSetupData.value.email.trim());
+});
+
+const isEmailInvalid = computed(() => {
+  return isEmailTouched.value && vipSetupData.value.email.length > 0 && !isEmailValid.value;
+});
+
+const isConfirmPasswordMismatch = computed(() => {
+  return isConfirmPasswordTouched.value && vipSetupData.value.confirmPassword.length > 0 && vipSetupData.value.confirmPassword !== vipSetupData.value.password;
+});
+
+const isConfirmPasswordMatched = computed(() => {
+  return isConfirmPasswordTouched.value && vipSetupData.value.confirmPassword.length > 0 && vipSetupData.value.confirmPassword === vipSetupData.value.password;
+});
+
+const isVIPSetupSubmitDisabled = computed(() => {
+  if (accountSetupMode.value === 'existing') {
+    return !vipSetupData.value.username || vipSetupData.value.username.trim().length < 3 || !vipSetupData.value.password;
+  } else {
+    if (!vipSetupData.value.username || vipSetupData.value.username.trim().length < 3) return true;
+    if (!isEmailValid.value) return true;
+    if (!vipSetupData.value.password || vipSetupData.value.password.length < 6) return true;
+    if (vipSetupData.value.password !== vipSetupData.value.confirmPassword) return true;
+    return false;
+  }
+});
+
+const tierCardStyle = computed(() => {
+  const plan = currentUser.value.vipPlan;
+  if (plan === 'admin') {
+    return {
+      cardClass: 'bg-gradient-to-br from-purple-900/40 via-indigo-900/40 to-fuchsia-900/30 border-purple-400/50 shadow-[0_10px_35px_rgba(168,85,247,0.25)]',
+      badgeClass: 'bg-purple-500/25 text-purple-300 border-purple-400/50',
+      badgeLabel: '👑 Admin',
+      expiryClass: 'text-purple-300',
+      headerLabel: '👑 VIP Supreme Admin Pass (Ultimate Access)'
+    };
+  } else if (plan === 'annual') {
+    return {
+      cardClass: 'bg-gradient-to-br from-amber-500/25 via-orange-600/20 to-yellow-600/20 border-amber-400/50 shadow-[0_10px_35px_rgba(245,158,11,0.2)]',
+      badgeClass: 'bg-amber-500/25 text-amber-300 border-amber-400/50',
+      badgeLabel: '⭐ VIP Annual',
+      expiryClass: 'text-amber-300',
+      headerLabel: '⭐ VIP Annual Pass (1 Year Access)'
+    };
+  } else if (plan === 'monthly') {
+    return {
+      cardClass: 'bg-gradient-to-br from-blue-600/25 via-cyan-600/20 to-teal-600/20 border-cyan-400/50 shadow-[0_10px_35px_rgba(6,182,212,0.2)]',
+      badgeClass: 'bg-cyan-500/25 text-cyan-300 border-cyan-400/50',
+      badgeLabel: '🌙 VIP Monthly',
+      expiryClass: 'text-cyan-300',
+      headerLabel: '🌙 VIP Monthly Pass (1 Month Access)'
+    };
+  } else {
+    return {
+      cardClass: 'bg-gradient-to-br from-rose-950/40 via-rose-900/20 to-red-950/40 border-rose-500/40 shadow-[0_10px_35px_rgba(244,63,94,0.15)]',
+      badgeClass: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+      badgeLabel: '🔒 No Access',
+      expiryClass: 'text-rose-400',
+      headerLabel: '🔒 No Tier Access (Payment Required)'
+    };
+  }
+});
+
+const passwordStrength = computed(() => {
+  const pwd = vipSetupData.value.password;
+  if (!pwd) return { score: 0, label: 'None', color: 'bg-gray-600', textClass: 'text-gray-400', width: 'w-0' };
+  
+  let score = 0;
+  if (pwd.length >= 6) score += 1;
+  if (pwd.length >= 8) score += 1;
+  if (/[A-Z]/.test(pwd)) score += 1;
+  if (/[0-9]/.test(pwd)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+
+  if (score <= 2) {
+    return { score, label: 'Weak Password (6+ chars & letters/numbers)', color: 'bg-rose-500', textClass: 'text-rose-400', width: 'w-1/3' };
+  } else if (score <= 3) {
+    return { score, label: 'Medium Security', color: 'bg-amber-400', textClass: 'text-amber-300', width: 'w-2/3' };
+  } else {
+    return { score, label: 'Strong Security (Excellent)', color: 'bg-emerald-400', textClass: 'text-emerald-400', width: 'w-full' };
+  }
+});
+
+const resetPasswordStrength = computed(() => {
+  const pwd = passwordForm.value.newPassword;
+  if (!pwd) return { score: 0, label: 'None', color: 'bg-gray-600', textClass: 'text-gray-400', width: 'w-0' };
+  
+  let score = 0;
+  if (pwd.length >= 6) score += 1;
+  if (pwd.length >= 8) score += 1;
+  if (/[A-Z]/.test(pwd)) score += 1;
+  if (/[0-9]/.test(pwd)) score += 1;
+  if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
+
+  if (score <= 2) {
+    return { score, label: 'Weak Password (Min 6 chars & letters/numbers)', color: 'bg-rose-500', textClass: 'text-rose-400', width: 'w-1/3' };
+  } else if (score <= 3) {
+    return { score, label: 'Medium Security', color: 'bg-amber-400', textClass: 'text-amber-300', width: 'w-2/3' };
+  } else {
+    return { score, label: 'Strong Security (Excellent)', color: 'bg-emerald-400', textClass: 'text-emerald-400', width: 'w-full' };
+  }
+});
+
+const isResetConfirmPasswordMismatch = computed(() => {
+  if (!passwordForm.value.confirmNewPassword) return false;
+  return passwordForm.value.newPassword !== passwordForm.value.confirmNewPassword;
+});
+
+const isResetConfirmPasswordMatched = computed(() => {
+  if (!passwordForm.value.confirmNewPassword || !passwordForm.value.newPassword) return false;
+  return passwordForm.value.newPassword === passwordForm.value.confirmNewPassword && passwordForm.value.newPassword.length >= 6;
+});
+
+const isSavePasswordSubmitDisabled = computed(() => {
+  if (!passwordForm.value.currentPassword) return true;
+  if (!passwordForm.value.newPassword || passwordForm.value.newPassword.length < 6) return true;
+  if (passwordForm.value.newPassword !== passwordForm.value.confirmNewPassword) return true;
+  return false;
+});
+
+const triggerVIPSetup = (planType = 'annual') => {
+  if (xenditPollingTimer.value) clearInterval(xenditPollingTimer.value);
+  xenditPollingTimer.value = null;
+
+  const targetPlan = (typeof planType === 'string') ? planType : (selectedVIPPlan.value || 'annual');
+  const now = new Date();
+  let expiryStr = '';
+  if (targetPlan === 'annual') {
+    now.setFullYear(now.getFullYear() + 1);
+    expiryStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } else {
+    now.setMonth(now.getMonth() + 1);
+    expiryStr = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  const planTag = targetPlan === 'annual' ? 'year' : 'month';
+  const generatedInvoiceNo = activeXenditInvoiceId.value || `viora-vip-${planTag}-${Date.now()}`;
+
+  if (isLoggedIn.value && currentUser.value.username) {
+    accountSetupMode.value = 'existing';
+  } else {
+    accountSetupMode.value = 'new';
+  }
+
+  vipSetupData.value = {
+    username: currentUser.value.username || '',
+    email: currentUser.value.email || '',
+    password: '',
+    confirmPassword: '',
+    plan: targetPlan,
+    expiryDate: expiryStr,
+    invoiceNo: generatedInvoiceNo,
+    paymentGateway: 'Xendit Official Gateway'
+  };
+  showVipPassword.value = false;
+  showVipConfirmPassword.value = false;
+  isEmailTouched.value = false;
+  isConfirmPasswordTouched.value = false;
+  vipSetupError.value = '';
+
+  isVIPModalOpen.value = false;
+  isEmbeddedCheckoutOpen.value = false;
+  isProcessingPayment.value = false;
+  isPaymentPaidSuccess.value = false;
+
+  isVIPSetupModalOpen.value = true;
+};
+
+const handleCompleteVIPSetup = async () => {
+  vipSetupError.value = '';
+  
+  if (accountSetupMode.value === 'existing') {
+    if (!vipSetupData.value.username || !vipSetupData.value.password) {
+      vipSetupError.value = 'Please enter both username/email and password to link your account.';
+      return;
+    }
+    try {
+      // 1. Authenticate to establish session
+      await api.post('/api/login/', {
+        username: vipSetupData.value.username.trim(),
+        password: vipSetupData.value.password
+      });
+
+      // 2. Secure Linking (Anti-Hijack)
+      await api.post('/api/xendit/link-account/', {
+        invoice_id: activeXenditInvoiceId.value,
+        checkout_token: activeCheckoutToken.value
+      });
+
+      // 3. Update Frontend State
+      const meRes = await api.get('/api/me/');
+      currentUser.value = {
+        username: meRes.data.username,
+        email: meRes.data.email,
+        vipPlan: meRes.data.vip_plan || 'none',
+        vipExpiry: meRes.data.vip_expiry || 'No Active Subscription',
+        invoiceNo: meRes.data.invoice_no || '',
+        checkoutToken: meRes.data.checkout_token || '',
+        referenceId: meRes.data.reference_id || '',
+        paymentStatus: meRes.data.payment_status || 'UNPAID',
+        paymentGateway: meRes.data.payment_gateway || 'N/A',
+        paymentDate: meRes.data.payment_date || 'Payment Required'
+      };
+      isLoggedIn.value = true;
+      localStorage.setItem('viora_auth_user', currentUser.value.username);
+      localStorage.setItem('viora_user_data', JSON.stringify(currentUser.value));
+
+      if (guestModernTimer.value) clearInterval(guestModernTimer.value);
+      guestModernTimer.value = null;
+      isGuestModernTrialActive.value = false;
+      executeUIChange('modern');
+      isVIPSetupModalOpen.value = false;
+
+      const planLabel = vipSetupData.value.plan === 'annual' ? '1-Year VIP Pass' : 'Monthly VIP Pass';
+      paymentSuccessMessage.value = `🎉 VIP Membership Linked to @${currentUser.value.username}! Active until ${vipSetupData.value.expiryDate}!`;
+      setTimeout(() => { paymentSuccessMessage.value = ''; }, 6000);
+    } catch (err) {
+      vipSetupError.value = err.response?.data?.detail || "Invalid username or password. Could not link account.";
+    }
+    return;
+  }
+
+  // NEW ACCOUNT MODE
+  // 1. Username Validation
+  if (!vipSetupData.value.username || vipSetupData.value.username.trim().length < 3) {
+    vipSetupError.value = 'Please enter a valid Username (at least 3 characters).';
+    return;
+  }
+
+  // 2. Strict Email Validation (@ and . domain check)
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!vipSetupData.value.email || !emailRegex.test(vipSetupData.value.email.trim())) {
+    vipSetupError.value = 'Please enter a valid Email Address with @ and domain extension (e.g. alex@viora.stream).';
+    return;
+  }
+
+  // 3. Password Length & Strength Check
+  if (!vipSetupData.value.password || vipSetupData.value.password.length < 6) {
+    vipSetupError.value = 'Password is too weak! Please use at least 6 characters with letters & numbers.';
+    return;
+  }
+
+  // 4. Confirm Password Match Check
+  if (vipSetupData.value.password !== vipSetupData.value.confirmPassword) {
+    vipSetupError.value = 'Account Passwords do not match! Please check and re-enter your password.';
+    return;
+  }
+
+  try {
+    // 1. Register User via API (which also logs them in on the backend session)
+    await api.post('/api/register/', {
+      username: vipSetupData.value.username.trim(),
+      email: vipSetupData.value.email.trim(),
+      password: vipSetupData.value.password,
+      confirm_password: vipSetupData.value.confirmPassword
+    });
+
+    // 2. Secure Linking (Anti-Hijack)
+    await api.post('/api/xendit/link-account/', {
+      invoice_id: activeXenditInvoiceId.value,
+      checkout_token: activeCheckoutToken.value
+    });
+
+    // 3. LOGOUT IMMEDIATELY so the user is forced to login manually as requested!
+    await api.post('/api/logout/').catch(() => null);
+
+    // 4. Update UI to show success and open Login Modal
+    isVIPSetupModalOpen.value = false;
+    paymentSuccessMessage.value = `🎉 Account successfully created & linked! Please login manually to access your VIP features.`;
+    
+    // Auto-fill login email for convenience
+    authData.value.email = vipSetupData.value.username.trim();
+    
+    setTimeout(() => { 
+      paymentSuccessMessage.value = ''; 
+      isLoginOpen.value = true;
+    }, 4000);
+  } catch (err) {
+    vipSetupError.value = err.response?.data?.detail || "Registration failed. Username or email may already be taken.";
+  }
+};
+
+const startXenditInvoicePolling = (invoiceId, paymentWin = null) => {
+  if (xenditPollingTimer.value) clearInterval(xenditPollingTimer.value);
+
+  xenditPollingTimer.value = setInterval(async () => {
+    try {
+      // SECURE POLLING: Ask Django backend, NOT Xendit directly
+      const res = await api.post('/api/xendit/check-status/', {
+        invoice_id: invoiceId,
+        checkout_token: activeCheckoutToken.value
+      }).catch(() => null);
+
+      if (res && res.data && res.data.status === 'PAID') {
+        clearInterval(xenditPollingTimer.value);
+        xenditPollingTimer.value = null;
+        isPaymentPaidSuccess.value = true;
+        
+        if (paymentWin && !paymentWin.closed) {
+          // Wait for user to close the Xendit popup
+          const checkWindowClosed = setInterval(() => {
+            if (paymentWin.closed) {
+              clearInterval(checkWindowClosed);
+              isPaymentPaidSuccess.value = false;
+              triggerVIPSetup(selectedVIPPlan.value);
+            }
+          }, 500);
+        } else {
+          // If already closed, delay slightly then trigger
+          setTimeout(() => {
+            isPaymentPaidSuccess.value = false;
+            triggerVIPSetup(selectedVIPPlan.value);
+          }, 1500);
+        }
+      } else if (res && res.data && (res.data.status === 'EXPIRED' || res.data.status === 'FAILED')) {
+        clearInterval(xenditPollingTimer.value);
+        xenditPollingTimer.value = null;
+        isProcessingPayment.value = false;
+      }
+    } catch (e) {
+      console.log('Polling error:', e);
+    }
+  }, 2000);
+};
+
+
+const handleCvcInput = (e) => {
+  let digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+  paymentCardData.value.cvc = digits;
+  cardValidationError.value = '';
+  e.target.value = digits;
+};
+
+const setCurrency = (curr) => {
+  userCurrency.value = curr;
+  if (curr === 'USD' && (selectedPaymentMethod.value === 'qris' || selectedPaymentMethod.value === 'va')) {
+    selectedPaymentMethod.value = 'card';
+  }
+};
+
+const detectUserCurrency = () => {
+  // Default currency is USD ($)
+  userCurrency.value = 'USD';
+};
+
+const monthlyPriceText = computed(() => userCurrency.value === 'USD' ? '$1.99' : 'Rp 29.000');
+const annualPriceText = computed(() => userCurrency.value === 'USD' ? '$11.99' : 'Rp 249.000');
+const annualEquivalentText = computed(() => userCurrency.value === 'USD' ? 'Equivalent to $0.99/mo (SAVE 50%)' : 'Equivalent to Rp 20k/mo');
+const payButtonPriceText = computed(() => {
+  if (selectedVIPPlan.value === 'annual') return userCurrency.value === 'USD' ? '$11.99' : 'Rp 249.000';
+  return userCurrency.value === 'USD' ? '$1.99' : 'Rp 29.000';
+});
+
+const openVIPModal = () => {
+  detectUserCurrency();
+  isEmbeddedCheckoutOpen.value = false;
+  isProcessingPayment.value = false;
+  if (isProfileOpen.value) isProfileOpen.value = false;
+  if (isCustomizationOpen.value) isCustomizationOpen.value = false;
+  isVIPModalOpen.value = true;
+};
+
+const handleProcessPayment = async () => {
+  cardValidationError.value = '';
+  isProcessingPayment.value = true;
+
+  // Open sleek compact floating payment popup window centered on screen
+  const width = 540;
+  const height = 750;
+  const left = Math.max(0, (window.screen.width - width) / 2);
+  const top = Math.max(0, (window.screen.height - height) / 2);
+  const popupFeatures = `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,resizable=yes,status=no,location=no,toolbar=no,menubar=no`;
+
+  const paymentWindow = window.open('about:blank', 'XenditPaymentCheckout', popupFeatures);
+  if (paymentWindow) {
+    paymentWindow.document.write(`
+      <html style="background:#09090b;color:#fff;font-family:sans-serif;">
+        <head><title>Connecting to Xendit Gateway...</title></head>
+        <body style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;margin:0;padding:20px;box-sizing:border-box;">
+          <div style="padding:30px;background:#18181b;border-radius:24px;border:1px solid #27272a;text-align:center;width:100%;max-width:400px;">
+            <h2 style="margin:0 0 10px;font-size:18px;color:#38bdf8;">Connecting to Xendit...</h2>
+            <p style="margin:0;font-size:12px;color:#a1a1aa;">Generating your secure payment checkout...</p>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  // Create Secure Invoice via Backend API
+  try {
+    const response = await api.post('/api/xendit/create-invoice/', {
+      plan: selectedVIPPlan.value
+    }).catch(() => null);
+
+    if (response && response.data && response.data.invoice_url) {
+      activeXenditInvoiceId.value = response.data.invoice_id;
+      activeCheckoutToken.value = response.data.checkout_token;
+      
+      // Navigate floating popup window to Official Xendit Checkout Page
+      if (paymentWindow && !paymentWindow.closed) {
+        paymentWindow.location.href = response.data.invoice_url;
+      } else {
+        window.open(response.data.invoice_url, 'XenditPaymentCheckout', popupFeatures);
+      }
+
+      // Start Real-Time Auto-Check Polling in main Viora window
+      startXenditInvoicePolling(response.data.invoice_id, paymentWindow);
+    } else {
+      if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
+      isProcessingPayment.value = false;
+    }
+  } catch (e) {
+    console.log('Xendit invoice sandbox exception:', e);
+    if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
+    isProcessingPayment.value = false;
+  }
+};
 
 const isEpisodesSidebarOpen = ref(false);
 const currentSeasonEpisodes = ref([]);
@@ -975,7 +1596,11 @@ const smoothHorizontalScroll = (e) => {
 };
 
 const loadMoreBrowseItems = async () => {
-  if (!isLoggedIn.value && browsePage.value > 1) return;
+  if (!hasAccess.value && browsePage.value > 1) {
+    if (!isLoggedIn.value) isLoginOpen.value = true;
+    else openVIPModal();
+    return;
+  }
   if (isFetchingMore.value) return;
   isFetchingMore.value = true;
   
@@ -1042,6 +1667,8 @@ const closeInfo = () => {
 };
 
 const toggleSearch = async () => {
+  if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
+  if (!hasAccess.value) { openVIPModal(); return; }
   if (isLoginOpen.value) isLoginOpen.value = false;
   if (isProfileOpen.value) isProfileOpen.value = false;
   if (isWatchlistOpen.value) isWatchlistOpen.value = false;
@@ -1056,6 +1683,7 @@ const toggleSearch = async () => {
 
 const toggleWatchlist = () => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
+  if (!hasAccess.value) { openVIPModal(); return; }
   if (isSearchOpen.value) isSearchOpen.value = false;
   if (isProfileOpen.value) isProfileOpen.value = false;
   
@@ -1078,6 +1706,7 @@ const handleUserIconClick = () => {
 
 const handleWatchlistToggle = async (movie, type = null) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
+  if (!hasAccess.value) { openVIPModal(); return; }
   const mediaType = type || movie.media_type || 'movie';
   const movieId = movie.id || movie.tmdb_id;
   try {
@@ -1194,10 +1823,29 @@ const handleLogin = async () => {
       password: loginData.value.password
     });
     isLoggedIn.value = true;
-    currentUser.value = { username: response.data.username, email: response.data.email };
+    
+    // Read subscription & invoice data directly from Django DB response!
+    currentUser.value = {
+      username: response.data.username,
+      email: response.data.email,
+      vipPlan: response.data.vip_plan || 'none',
+      vipExpiry: response.data.vip_expiry || 'No Active Subscription',
+      invoiceNo: response.data.invoice_no || '',
+      checkoutToken: response.data.checkout_token || '',
+      referenceId: response.data.reference_id || '',
+      paymentStatus: response.data.payment_status || 'UNPAID',
+      paymentGateway: response.data.payment_gateway || 'N/A',
+      paymentDate: response.data.payment_date || 'Payment Required'
+    };
+
     localStorage.setItem('viora_auth_user', response.data.username);
+    localStorage.setItem('viora_user_data', JSON.stringify(currentUser.value));
     isLoginOpen.value = false;
     loginData.value = { username: '', password: '' };
+
+    if (currentUser.value.vipPlan === 'none') {
+      setTimeout(() => openVIPModal(), 300);
+    }
 
     // Clear guest trial timer if active
     if (guestModernTimer.value) clearInterval(guestModernTimer.value);
@@ -1215,7 +1863,7 @@ const handleLogin = async () => {
 
   } catch (error) {
     console.error(error);
-    loginError.value = error.response?.data?.detail || 'Login gagal. Cek username dan password.';
+    loginError.value = error.response?.data?.detail || 'Authentication failed. Please verify your username and password.';
   } finally { isLoggingIn.value = false; }
 };
 
@@ -1243,19 +1891,37 @@ const handleLogout = async () => {
 
 
 const checkLoginStatus = async () => {
-  // Cek session aktif via /api/me/ — lebih reliable daripada cek localStorage
+  // Cek session aktif via /api/me/ — membaca data dari database Django
   try {
     const res = await api.get('/api/me/');
     isLoggedIn.value = true;
-    currentUser.value = { username: res.data.username, email: res.data.email };
+    
+    currentUser.value = {
+      username: res.data.username,
+      email: res.data.email,
+      vipPlan: res.data.vip_plan || 'none',
+      vipExpiry: res.data.vip_expiry || 'No Active Subscription',
+      invoiceNo: res.data.invoice_no || '',
+      checkoutToken: res.data.checkout_token || '',
+      referenceId: res.data.reference_id || '',
+      paymentStatus: res.data.payment_status || 'UNPAID',
+      paymentGateway: res.data.payment_gateway || 'N/A',
+      paymentDate: res.data.payment_date || 'Payment Required'
+    };
+
     localStorage.setItem('viora_auth_user', res.data.username);
+    localStorage.setItem('viora_user_data', JSON.stringify(currentUser.value));
     uiMode.value = localStorage.getItem('viora_ui_mode') || 'modern';
     await fetchUserData();
     await fetchWatchlist();
+
+    if (currentUser.value.vipPlan === 'none') {
+      setTimeout(() => openVIPModal(), 300);
+    }
   } catch (e) {
     // Tidak ada session aktif
     isLoggedIn.value = false;
-    currentUser.value = { username: '' };
+    currentUser.value = { username: '', vipPlan: 'none' };
     localStorage.removeItem('viora_auth_user');
     uiMode.value = 'classic';
   }
@@ -1326,6 +1992,7 @@ const handleSeasonChange = async (event) => {
 
 const openPlayer = (movie) => {
   if (!isLoggedIn.value) { isLoginOpen.value = true; return; }
+  if (!hasAccess.value) { openVIPModal(); return; }
   const type = movie.media_type === 'tv' ? 'tv' : 'movie'; 
   currentMedia.value = movie;
   
@@ -1573,8 +2240,8 @@ const blockAdsAndTrackers = () => {
       const href = String(url).toLowerCase();
       // Blokir URL yang mengandung domain tracker/ads
       const isAd = AD_TRACKER_DOMAINS.some(d => href.includes(d));
-      // Blokir juga popup yang tidak punya URL jelas (javascript:, about:blank tricks)
-      const isSuspicious = href.startsWith('javascript:') || href === 'about:blank' || href === '';
+      // Blokir juga popup yang tidak punya URL jelas (javascript:)
+      const isSuspicious = href.startsWith('javascript:') || href === '';
       if (isAd || isSuspicious) {
         console.info('[Viora] Blocked popup/tracker:', url);
         return null;
@@ -1585,6 +2252,26 @@ const blockAdsAndTrackers = () => {
 };
 
 onMounted(() => {
+  // Check if returning from Xendit Payment Redirect
+  if (window.location.search.includes('xendit_payment=success')) {
+    if (window.opener && !window.opener.closed) {
+      try {
+        window.opener.postMessage('xendit_payment_paid', '*');
+      } catch (e) {}
+      window.close();
+      return;
+    }
+    window.history.replaceState({}, document.title, window.location.pathname);
+    triggerVIPSetup(selectedVIPPlan.value || 'annual');
+  }
+
+  // Listen for popup window payment completion message
+  window.addEventListener('message', (event) => {
+    if (event.data === 'xendit_payment_paid') {
+      triggerVIPSetup(selectedVIPPlan.value || 'annual');
+    }
+  });
+
   // Anti Inspect Element & Right Click
   window.addEventListener('contextmenu', (e) => e.preventDefault());
   window.addEventListener('keydown', (e) => {
@@ -2418,7 +3105,7 @@ onUnmounted(() => {
                     <!-- Hover Center Play Button (Ultra-lightweight, zero blur) -->
                     <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-30">
                       <div class="w-12 h-12 bg-black/70 text-white rounded-full flex items-center justify-center border border-white/30 transform scale-75 group-hover:scale-100 transition-transform shadow-xl">
-                        <Lock v-if="!isLoggedIn" class="w-5 h-5 text-white" />
+                        <Lock v-if="!hasAccess" class="w-5 h-5 text-white" />
                         <Play v-else class="w-5 h-5 fill-current ml-0.5" />
                       </div>
                     </div>
@@ -2577,8 +3264,19 @@ onUnmounted(() => {
                 <h4 class="text-white font-bold text-sm truncate">
                   {{ isLoggedIn ? '@' + currentUser.username : 'Guest Mode' }}
                 </h4>
-                <p class="text-xs text-blue-400 font-medium drop-shadow-[0_0_6px_rgba(96,165,250,0.7)]">
-                  {{ isLoggedIn ? 'VIP Member' : 'Trial Preview' }}
+                <div v-if="isLoggedIn" class="mt-0.5">
+                  <span 
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase border tracking-wider"
+                    :class="tierCardStyle.badgeClass"
+                  >
+                    <Sparkles v-if="currentUser.vipPlan === 'admin'" class="w-2.5 h-2.5 text-purple-300" />
+                    <CheckCircle2 v-else-if="currentUser.vipPlan && currentUser.vipPlan !== 'none'" class="w-2.5 h-2.5 text-emerald-400" />
+                    <Lock v-else class="w-2.5 h-2.5 text-rose-400" />
+                    {{ tierCardStyle.badgeLabel }}
+                  </span>
+                </div>
+                <p v-else class="text-xs text-blue-400 font-medium drop-shadow-[0_0_6px_rgba(96,165,250,0.7)]">
+                  Trial Preview
                 </p>
               </div>
             </div>
@@ -2586,6 +3284,7 @@ onUnmounted(() => {
             <div class="space-y-1 relative z-10">
               <template v-if="isLoggedIn">
                 <button
+                  @click="isProfileOpen = false; openSettingsModal();"
                   @mousemove="(e) => handleMagnetMove(e, 'settings')"
                   @mouseleave="resetMagnet"
                   class="group w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 rounded-xl transition-all text-left hover:bg-white/10 hover:text-white"
@@ -2613,14 +3312,21 @@ onUnmounted(() => {
 
               <template v-else>
                 <button 
-                  @click="isProfileOpen = false; isLoginOpen = true;"
-                  class="group w-full flex items-center justify-between p-3 text-xs font-extrabold text-white bg-blue-600/80 hover:bg-blue-500 rounded-xl transition-all shadow-md active:scale-95"
+                  @click="openVIPModal"
+                  class="group w-full flex items-center justify-between p-3 text-xs font-extrabold text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-xl transition-all shadow-lg shadow-blue-600/30 active:scale-95 border border-white/20"
                 >
                   <span class="flex items-center gap-2">
-                    <UserIcon class="w-4 h-4" />
-                    Sign In / Membership
+                    <CheckCircle2 class="w-4 h-4 text-emerald-400" />
+                    Upgrade to VIP Pass
                   </span>
                   <ChevronRight class="w-4 h-4 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+                <button 
+                  @click="isProfileOpen = false; isLoginOpen = true;"
+                  class="group w-full flex items-center justify-center gap-2 p-2.5 text-xs font-bold text-gray-300 hover:text-white rounded-xl transition-all text-center mt-1 hover:bg-white/10"
+                >
+                  <UserIcon class="w-3.5 h-3.5" />
+                  Sign In Existing Account
                 </button>
               </template>
             </div>
@@ -2669,7 +3375,7 @@ onUnmounted(() => {
                     class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center flex items-center justify-center gap-1"
                     :class="glassMode === 'full' ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
-                    <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                    <Lock v-if="!hasAccess" class="w-3 h-3 text-amber-400" />
                     <span>Full</span>
                   </button>
                   <button 
@@ -2733,7 +3439,7 @@ onUnmounted(() => {
                     class="py-1.5 px-1 rounded-lg text-[11px] font-semibold transition-all text-center flex items-center justify-center gap-1"
                     :class="isSmoothScrollEnabled ? 'bg-blue-600 text-white shadow-md' : 'text-gray-400 hover:text-white hover:bg-white/10'"
                   >
-                    <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                    <Lock v-if="!hasAccess" class="w-3 h-3 text-amber-400" />
                     On (Smooth)
                   </button>
                 </div>
@@ -2768,7 +3474,7 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'emerald' ? 'bg-emerald-600/80 border-emerald-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <Lock v-if="!hasAccess" class="w-3 h-3 text-amber-400" />
                       <span v-else class="w-2 h-2 rounded-full bg-emerald-400"></span> Emerald
                     </button>
 
@@ -2777,7 +3483,7 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'crimson' ? 'bg-rose-600/80 border-rose-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <Lock v-if="!hasAccess" class="w-3 h-3 text-amber-400" />
                       <span v-else class="w-2 h-2 rounded-full bg-rose-400"></span> Crimson
                     </button>
 
@@ -2786,7 +3492,7 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'violet' ? 'bg-purple-600/80 border-purple-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <Lock v-if="!hasAccess" class="w-3 h-3 text-amber-400" />
                       <span v-else class="w-2 h-2 rounded-full bg-purple-400"></span> Violet
                     </button>
 
@@ -2795,7 +3501,7 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'frost' ? 'bg-cyan-600/80 border-cyan-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <Lock v-if="!isLoggedIn" class="w-3 h-3 text-amber-400" />
+                      <Lock v-if="!hasAccess" class="w-3 h-3 text-amber-400" />
                       <span v-else class="w-2 h-2 rounded-full bg-cyan-400"></span> Frost
                     </button>
                   </div>
@@ -2804,6 +3510,1023 @@ onUnmounted(() => {
             </div>
 
           </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- VIP MEMBERSHIP & PAYMENT GATEWAY MODAL (HORIZONTAL CINEMATIC LAYOUT) -->
+    <Transition name="fade">
+      <div v-if="isVIPModalOpen" class="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex justify-center items-center p-4 md:p-8 overflow-y-auto" @click.self="isVIPModalOpen = false">
+        <div class="w-full max-w-5xl !rounded-[3rem] shadow-[0_30px_100px_-15px_rgba(0,0,0,0.95)] relative overflow-hidden my-auto bg-black/75 backdrop-blur-3xl border border-white/20">
+          <div class="relative w-full h-full flex flex-col md:flex-row z-10 overflow-hidden">
+            
+            <!-- LEFT SIDE: VIP Plan & Premium Streaming Perks (50% Width) -->
+            <div class="w-full md:w-1/2 p-6 md:p-9 border-b md:border-b-0 md:border-r border-white/10 flex flex-col justify-between bg-white/[0.02]">
+              
+              <div>
+                <!-- Header Badge & Currency Switcher -->
+                <div class="flex items-center justify-between mb-4">
+                  <div 
+                    class="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-black uppercase tracking-wider transition-all duration-500"
+                    :class="selectedVIPPlan === 'annual' 
+                      ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-amber-400/40 text-amber-300' 
+                      : 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-400/40 text-blue-300'"
+                  >
+                    <CheckCircle2 class="w-3.5 h-3.5" :class="selectedVIPPlan === 'annual' ? 'text-amber-300' : 'text-blue-300'" /> 
+                    {{ selectedVIPPlan === 'annual' ? ' Viora Annual VIP Pass' : ' Viora Monthly VIP Pass' }}
+                  </div>
+
+                  <!-- Dynamic Currency Toggle Switcher -->
+                  <div class="flex items-center gap-1 bg-white/10 p-0.5 rounded-xl border border-white/15">
+                    <button 
+                      @click="setCurrency('USD')" 
+                      class="px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
+                      :class="userCurrency === 'USD' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-white'"
+                    >
+                      <DollarSign class="w-3 h-3" /> USD ($)
+                    </button>
+                    <button 
+                      @click="setCurrency('IDR')" 
+                      class="px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1"
+                      :class="userCurrency === 'IDR' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-400 hover:text-white'"
+                    >
+                      🇮🇩 IDR (Rp)
+                    </button>
+                  </div>
+
+                  <button @click="isVIPModalOpen = false" class="md:hidden p-2 rounded-full bg-white/10 text-white">
+                    <X class="w-4 h-4" />
+                  </button>
+                </div>
+
+                <h3 
+                  class="text-2xl md:text-3xl font-black tracking-tight leading-tight mb-2 transition-all duration-500 bg-clip-text text-transparent"
+                  :style="selectedVIPPlan === 'annual' 
+                    ? 'background-image: linear-gradient(135deg, #fbbf24, #f59e0b, #ffffff)' 
+                    : 'background-image: linear-gradient(135deg, #60a5fa, #818cf8, #ffffff)'"
+                >
+                  {{ selectedVIPPlan === 'annual' ? '✨ Upgrade to Annual VIP' : '💙 Upgrade to Monthly VIP' }}
+                </h3>
+                <p class="text-xs mb-6 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-200/70' : 'text-gray-300'">
+                  {{ selectedVIPPlan === 'annual' ? 'Best value! 1 full year of 4K cinema access — save 40% vs monthly.' : 'Stream thousands of blockbuster movies & TV series in pristine 4K quality with no limits.' }}
+                </p>
+
+                <!-- Plan Options (Horizontal Grid) -->
+                <div class="grid grid-cols-2 gap-3 mb-6">
+                  <!-- Monthly Card -->
+                  <div class="relative p-[2px] rounded-2xl cursor-pointer transition-all" :class="selectedVIPPlan === 'monthly' ? 'scale-[1.03]' : 'scale-100'" @click="selectedVIPPlan = 'monthly'">
+                    <div class="absolute inset-0 rounded-2xl overflow-hidden">
+                      <div 
+                        class="absolute inset-[-50%] animate-[rainbowRotate_3s_linear_infinite]"
+                        :style="selectedVIPPlan === 'monthly' 
+                          ? 'background: conic-gradient(#00cfff, #0066ff, #6600ff, #00cfff)' 
+                          : 'background: conic-gradient(#334155, #475569, #334155)'"
+                      ></div>
+                    </div>
+                    <div class="relative rounded-[14px] p-3.5 flex flex-col justify-between h-full transition-colors duration-500" :class="selectedVIPPlan === 'monthly' ? 'bg-blue-950/90' : 'bg-[#0f0f13]'">
+                      <span class="text-[10px] font-extrabold uppercase block mb-1" :class="selectedVIPPlan === 'monthly' ? 'text-blue-300' : 'text-gray-400'">Monthly VIP</span>
+                      <div class="text-lg font-black text-white">{{ monthlyPriceText }} <span class="text-[10px] text-gray-400 font-normal">/mo</span></div>
+                      <p class="text-[10px] text-gray-400 mt-2">Cancel anytime. Full VIP access.</p>
+                    </div>
+                  </div>
+
+                  <!-- Annual Card -->
+                  <div class="relative p-[2px] rounded-2xl cursor-pointer transition-all" :class="selectedVIPPlan === 'annual' ? 'scale-[1.03]' : 'scale-100'" @click="selectedVIPPlan = 'annual'">
+                    <div class="absolute inset-0 rounded-2xl overflow-hidden">
+                      <div 
+                        class="absolute inset-[-50%] animate-[rainbowRotate_3s_linear_infinite]"
+                        :style="selectedVIPPlan === 'annual' 
+                          ? 'background: conic-gradient(#f59e0b, #fbbf24, #fef08a, #f59e0b, #d97706, #f59e0b)' 
+                          : 'background: conic-gradient(#334155, #475569, #334155)'"
+                      ></div>
+                    </div>
+                    <div class="relative rounded-[14px] p-3.5 overflow-hidden flex flex-col justify-between h-full transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'bg-gradient-to-br from-amber-950/80 to-yellow-950/80' : 'bg-[#0f0f13]'">
+                      <div class="absolute -right-7 top-2 bg-gradient-to-r from-amber-500 to-amber-400 text-black text-[8px] font-black uppercase tracking-wider px-6 py-0.5 rotate-45 shadow-md">
+                        SAVE 40%
+                      </div>
+                      <span class="text-[10px] font-extrabold uppercase text-amber-300 block mb-1">Annual VIP Pass</span>
+                      <div class="text-lg font-black text-white">{{ annualPriceText }} <span class="text-[10px] text-gray-400 font-normal">/yr</span></div>
+                      <p class="text-[10px] text-amber-200/80 mt-2 font-semibold">{{ annualEquivalentText }}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Attractive Streaming Perks List (Pure English) -->
+                <div class="space-y-2.5 mb-6">
+                  <div class="flex items-start gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <div class="p-2 rounded-lg bg-blue-500/20 text-blue-400 flex-shrink-0 mt-0.5">
+                      <Film class="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 class="text-xs font-bold text-white">4K Ultra HD & FHD 1080p Stream Quality</h5>
+                      <p class="text-[11px] text-gray-400">Crystal clear resolution with zero buffering and no limits.</p>
+                    </div>
+                  </div>
+
+                  <div class="flex items-start gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <div class="p-2 rounded-lg bg-emerald-500/20 text-emerald-400 flex-shrink-0 mt-0.5">
+                      <Clapperboard class="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 class="text-xs font-bold text-white">Unlimited Access to All Movies, Series & Anime</h5>
+                      <p class="text-[11px] text-gray-400">Watch full catalogs of blockbuster movies, TV shows, & trending anime.</p>
+                    </div>
+                  </div>
+
+                  <div class="flex items-start gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <div class="p-2 rounded-lg bg-purple-500/20 text-purple-400 flex-shrink-0 mt-0.5">
+                      <Subtitles class="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 class="text-xs font-bold text-white">Multi-Language Subtitles & Closed Captions (CC)</h5>
+                      <p class="text-[11px] text-gray-400">Accurate English, Indonesian, & global subtitles for every title.</p>
+                    </div>
+                  </div>
+
+                  <div class="flex items-start gap-3 p-2.5 rounded-xl bg-white/5 border border-white/10">
+                    <div class="p-2 rounded-lg bg-amber-500/20 text-amber-400 flex-shrink-0 mt-0.5">
+                      <Tv class="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h5 class="text-xs font-bold text-white">Multi-Device & 100% Ad-Free Cinema</h5>
+                      <p class="text-[11px] text-gray-400">Stream on Smart TV, Laptop, Tablet & Mobile without any ad interruptions.</p>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              <div class="pt-3 border-t border-white/10 flex items-center justify-between text-[11px] text-gray-400 transition-all duration-500">
+                <span>VIP Cinema Guarantee</span>
+                <span class="font-bold transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-400' : 'text-blue-400'">
+                  {{ selectedVIPPlan === 'annual' ? ' Instant Activation' : ' Instant Activation' }}
+                </span>
+              </div>
+
+            </div>
+
+            <!-- RIGHT SIDE: Payment Gateway & Checkout (50% Width) -->
+            <div 
+              class="w-full md:w-1/2 p-6 md:p-9 flex flex-col justify-between relative transition-all duration-700"
+              :class="selectedVIPPlan === 'annual' ? 'bg-gradient-to-br from-amber-950/40 via-black/20 to-yellow-950/30' : 'bg-gradient-to-br from-blue-950/40 via-black/20 to-indigo-950/30'"
+            >
+              
+              <button @click="isVIPModalOpen = false" class="hidden md:flex absolute top-6 right-6 p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all border border-white/10 z-20">
+                <X class="w-5 h-5" />
+              </button>
+
+              <!-- EMBEDDED XENDIT IFRAME CHECKOUT PAGE -->
+              <template v-if="isEmbeddedCheckoutOpen">
+                <div class="w-full h-full flex flex-col justify-between space-y-3">
+                  <div class="flex items-center justify-between pb-2 border-b border-white/10">
+                    <span class="text-xs font-bold text-white flex items-center gap-2">
+                      <Globe class="w-4 h-4 text-blue-400" /> Xendit Official Checkout
+                    </span>
+                    <button @click="isEmbeddedCheckoutOpen = false" class="text-[11px] font-bold text-gray-400 hover:text-white flex items-center gap-1 transition-all">
+                      ← Back to Options
+                    </button>
+                  </div>
+
+                  <iframe 
+                    :src="activeXenditInvoiceUrl" 
+                    class="w-full h-[410px] rounded-2xl border border-white/20 bg-white shadow-2xl"
+                    allow="payment"
+                  ></iframe>
+
+                  <div class="flex items-center justify-center gap-2 text-[10px] transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-300/80' : 'text-gray-400'">
+                    <Lock class="w-3 h-3" :class="selectedVIPPlan === 'annual' ? 'text-amber-400' : 'text-emerald-400'" />
+                    <span>Instant automatic VIP activation as soon as payment is confirmed</span>
+                  </div>
+                </div>
+              </template>
+
+              <!-- PRE-PAYMENT SELECTION & INFO -->
+              <template v-else>
+                <div>
+                  <h4 class="text-xl font-black mb-1 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-200' : 'text-white'">Xendit Official Gateway</h4>
+                  <p class="text-xs mb-5 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-300/60' : 'text-gray-400'">Pay securely via QRIS, Credit Card, Bank VA & E-Wallets</p>
+
+                  <!-- Xendit All-in-One Smart Gateway Hub -->
+                  <div class="mb-5">
+                    <div class="p-5 rounded-3xl bg-black/40 border transition-colors duration-500 space-y-4" :class="selectedVIPPlan === 'annual' ? 'border-amber-400/20' : 'border-white/10'">
+                      
+                      <div class="flex items-center gap-3">
+                        <div class="p-3 rounded-2xl border shadow-md transition-all duration-500"
+                          :class="selectedVIPPlan === 'annual' 
+                            ? 'bg-gradient-to-tr from-amber-600/30 to-yellow-600/30 text-amber-300 border-amber-400/40' 
+                            : 'bg-gradient-to-tr from-blue-600/30 to-purple-600/30 text-blue-300 border-blue-400/40'"
+                        >
+                          <Globe class="w-6 h-6 animate-pulse" />
+                        </div>
+                        <div>
+                          <h5 class="text-sm font-black text-white">Xendit All-in-One Checkout</h5>
+                          <p class="text-[11px] text-gray-400">Official Instant Automated Payment Hub</p>
+                        </div>
+                      </div>
+
+                      <!-- Methods Badges Grid -->
+                      <div class="grid grid-cols-3 gap-2 pt-3 border-t border-white/10 text-center">
+                        <div class="p-2.5 rounded-xl border flex flex-col items-center gap-1 transition-all duration-500"
+                          :class="selectedVIPPlan === 'annual' ? 'bg-amber-500/10 border-amber-400/20' : 'bg-white/5 border-white/10'">
+                          <QrCode class="w-4 h-4 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-400' : 'text-blue-400'" />
+                          <span class="text-[10px] font-extrabold uppercase text-white block">QRIS</span>
+                          <span class="text-[8px] text-gray-400">GoPay / OVO / DANA</span>
+                        </div>
+
+                        <div class="p-2.5 rounded-xl border flex flex-col items-center gap-1 transition-all duration-500"
+                          :class="selectedVIPPlan === 'annual' ? 'bg-amber-500/10 border-amber-400/20' : 'bg-white/5 border-white/10'">
+                          <Building2 class="w-4 h-4 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-yellow-300' : 'text-sky-400'" />
+                          <span class="text-[10px] font-extrabold uppercase text-white block">Bank VA</span>
+                          <span class="text-[8px] text-gray-400">BCA / Mandiri / BRI</span>
+                        </div>
+
+                        <div class="p-2.5 rounded-xl border flex flex-col items-center gap-1 transition-all duration-500"
+                          :class="selectedVIPPlan === 'annual' ? 'bg-amber-500/10 border-amber-400/20' : 'bg-white/5 border-white/10'">
+                          <CreditCard class="w-4 h-4 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-300' : 'text-indigo-400'" />
+                          <span class="text-[10px] font-extrabold uppercase text-white block">Card</span>
+                          <span class="text-[8px] text-gray-400">Visa / Amex / MC</span>
+                        </div>
+                      </div>
+
+                      <div class="p-2.5 rounded-xl border text-center text-[10px] font-semibold transition-all duration-500"
+                        :class="selectedVIPPlan === 'annual' 
+                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-300' 
+                          : 'bg-blue-500/10 border-blue-500/20 text-blue-300'"
+                      >
+                        ⚡ Embedded Checkout: Complete payment right inside Viora.
+                      </div>
+
+                    </div>
+                  </div>
+
+                  <!-- Order Summary -->
+                  <div class="p-3.5 rounded-2xl mb-5 flex items-center justify-between border transition-all duration-500"
+                    :class="selectedVIPPlan === 'annual' ? 'bg-amber-500/5 border-amber-400/20' : 'bg-white/5 border-white/10'"
+                  >
+                    <div>
+                      <span class="text-[10px] uppercase font-extrabold text-gray-400 block">Total Due Today</span>
+                      <span class="text-base font-black block transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-200' : 'text-white'">
+                        {{ payButtonPriceText }}
+                      </span>
+                    </div>
+                    <span class="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase border transition-all duration-500"
+                      :class="selectedVIPPlan === 'annual' 
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' 
+                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'"
+                    >
+                      0% Tax (Limited Promo)
+                    </span>
+                  </div>
+
+                </div>
+
+                <!-- Footer Pay Button & Payment Polling State -->
+                <div>
+                  <template v-if="!isProcessingPayment">
+                    <!-- Rainbow Pay Button -->
+                    <div class="relative p-[2px] rounded-2xl overflow-hidden">
+                      <div class="absolute inset-0 rounded-2xl overflow-hidden">
+                        <div 
+                          class="absolute inset-[-50%] animate-[rainbowRotate_1.8s_linear_infinite]"
+                          :style="selectedVIPPlan === 'annual' 
+                            ? 'background: conic-gradient(#f59e0b, #fbbf24, #fef08a, #f59e0b, #d97706, #f59e0b)' 
+                            : 'background: conic-gradient(#38bdf8, #60a5fa, #818cf8, #38bdf8, #0ea5e9, #38bdf8)'"
+                        ></div>
+                      </div>
+                      <button 
+                        @click="handleProcessPayment" 
+                        class="relative w-full py-4 rounded-[14px] text-white font-black text-sm tracking-wide transition-all duration-500 flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
+                        :class="selectedVIPPlan === 'annual' 
+                          ? 'bg-gradient-to-r from-amber-700 via-yellow-600 to-amber-600 hover:from-amber-600 hover:to-yellow-500 shadow-[0_0_30px_rgba(245,158,11,0.45)]' 
+                          : 'bg-gradient-to-r from-sky-700 via-blue-700 to-indigo-700 hover:from-sky-600 hover:to-indigo-600 shadow-[0_0_30px_rgba(56,189,248,0.35)]'"
+                      >
+                        <CheckCircle2 class="w-5 h-5" :class="selectedVIPPlan === 'annual' ? 'text-yellow-200' : 'text-cyan-300'" />
+                        <span>Pay {{ payButtonPriceText }} & Activate VIP</span>
+                      </button>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div v-if="!isPaymentPaidSuccess" class="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-center space-y-3">
+                      <div class="flex items-center justify-center gap-2 text-blue-300 font-bold text-xs">
+                        <Loader2 class="w-4 h-4 animate-spin text-blue-400" />
+                        <span>Waiting for Xendit Payment Confirmation...</span>
+                      </div>
+                      <p class="text-[11px] text-gray-300">Complete payment on the Xendit checkout window. Account Setup Modal will open automatically upon payment confirmation.</p>
+                    </div>
+                    <div v-else class="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-center space-y-4 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
+                      <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/0 via-emerald-500/10 to-emerald-500/0 w-[200%] animate-[shimmer_2s_infinite] -z-10"></div>
+                      <div class="flex flex-col items-center justify-center gap-3">
+                        <div class="w-12 h-12 rounded-full bg-emerald-500/20 flex items-center justify-center animate-bounce shadow-[0_0_20px_rgba(16,185,129,0.3)] border border-emerald-400/50">
+                          <CheckCircle2 class="w-7 h-7 text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.8)]" />
+                        </div>
+                        <span class="text-emerald-400 font-black text-lg tracking-wide uppercase drop-shadow-md">Payment Verified!</span>
+                      </div>
+                      <div class="space-y-1.5 pt-2 border-t border-emerald-500/20">
+                        <p class="text-[12px] font-semibold text-emerald-300">Almost there! 🎉</p>
+                        <p class="text-[11px] text-gray-300">Please <b class="text-white">Close the Xendit Payment Window</b> to continue.</p>
+                        <p class="text-[10px] text-gray-400 flex items-center justify-center gap-1 mt-1">
+                          <Loader2 class="w-3 h-3 animate-spin text-emerald-500" /> Waiting for window close...
+                        </p>
+                      </div>
+                    </div>
+                  </template>
+
+                  <div class="flex items-center justify-center gap-2 text-[10px] mt-3 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-400/60' : 'text-gray-400'">
+                    <Lock class="w-3 h-3" :class="selectedVIPPlan === 'annual' ? 'text-amber-400' : 'text-emerald-400'" />
+                    <span>256-Bit SSL Encrypted Payment • Instant Automatic VIP Activation</span>
+                  </div>
+                </div>
+              </template>
+
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- POST-PAYMENT VIP ACCOUNT CREATION & SETUP MODAL -->
+    <Transition name="fade">
+      <div v-if="isVIPSetupModalOpen" class="fixed inset-0 z-[1100] bg-black/60 backdrop-blur-md flex justify-center items-center p-4 overflow-y-auto" @click.self="isVIPSetupModalOpen = false">
+        <div class="w-full max-w-4xl !rounded-[2.5rem] bg-black/85 backdrop-blur-3xl shadow-[0_30px_100px_-15px_rgba(0,0,0,0.95)] relative overflow-hidden my-auto flex flex-col md:flex-row border transition-colors duration-500"
+          :class="vipSetupData.plan === 'annual' ? 'border-amber-400/40' : 'border-blue-400/40'"
+        >
+          
+          <!-- LEFT COLUMN: Context & Info -->
+          <div 
+            class="w-full md:w-5/12 border-r border-white/10 p-6 md:p-8 flex flex-col justify-between relative overflow-hidden transition-all duration-500"
+            :class="vipSetupData.plan === 'annual' ? 'bg-gradient-to-br from-amber-500/10 via-black to-black' : 'bg-gradient-to-br from-blue-500/10 via-black to-black'"
+          >
+            <!-- Glow background effect -->
+            <div 
+              class="absolute top-0 left-0 w-full h-full pointer-events-none"
+              :class="vipSetupData.plan === 'annual' ? 'bg-[radial-gradient(ellipse_at_top_left,rgba(245,158,11,0.15),transparent_70%)]' : 'bg-[radial-gradient(ellipse_at_top_left,rgba(56,189,248,0.15),transparent_70%)]'"
+            ></div>
+            
+            <div class="relative z-10">
+              <!-- Header Badge -->
+              <div 
+                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider mb-6 transition-all duration-500"
+                :class="vipSetupData.plan === 'annual' 
+                  ? 'bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border-amber-400/50 text-amber-300' 
+                  : 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-400/50 text-blue-300'"
+              >
+                <CheckCircle2 class="w-3.5 h-3.5" :class="vipSetupData.plan === 'annual' ? 'text-amber-400' : 'text-blue-400'" /> Payment Verified Paid
+              </div>
+              
+              <h3 class="text-3xl font-black text-white tracking-tight mb-2 leading-tight">
+                Complete Your<br/><span class="text-transparent bg-clip-text transition-all duration-500" :style="vipSetupData.plan === 'annual' ? 'background-image: linear-gradient(to right, #fcd34d, #f97316)' : 'background-image: linear-gradient(to right, #38bdf8, #818cf8)'">VIP Setup</span>
+              </h3>
+              <p class="text-[13px] text-gray-300 mb-8 leading-relaxed">
+                Your Xendit payment is verified! Create your custom login credentials to activate your VIP Cinema Pass.
+              </p>
+
+              <!-- Verified Subscription Badge Card -->
+              <div 
+                class="p-4 rounded-2xl border mb-4 flex items-center justify-between transition-all duration-500"
+                :class="vipSetupData.plan === 'annual' 
+                  ? 'bg-gradient-to-br from-amber-500/15 via-black to-black border-amber-400/30' 
+                  : 'bg-gradient-to-br from-blue-500/15 via-black to-black border-blue-400/30'"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="p-3 rounded-xl border flex-shrink-0 transition-all duration-500"
+                    :class="vipSetupData.plan === 'annual' ? 'bg-amber-400/20 border-amber-400/40' : 'bg-blue-400/20 border-blue-400/40'"
+                  >
+                    <CheckCircle2 class="w-6 h-6" :class="vipSetupData.plan === 'annual' ? 'text-amber-300' : 'text-blue-300'" />
+                  </div>
+                  <div>
+                    <span class="text-[10px] font-black uppercase block transition-colors duration-500" :class="vipSetupData.plan === 'annual' ? 'text-amber-300' : 'text-blue-300'">Active Plan Tier</span>
+                    <h4 class="text-[13px] font-black text-white leading-tight">
+                      {{ vipSetupData.plan === 'annual' ? 'VIP Annual Pass (1 Year Access)' : 'VIP Monthly Pass (1 Month Access)' }}
+                    </h4>
+                    <p class="text-[10px] text-gray-400 mt-0.5">Valid until: <span class="text-emerald-300 font-bold">{{ vipSetupData.expiryDate }}</span></p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Official Invoice Proof Receipt Banner -->
+              <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
+                <div>
+                  <span class="text-[9px] font-black uppercase text-gray-400 block mb-0.5">Official Invoice No.</span>
+                  <span class="text-[11px] font-mono font-bold text-amber-300">{{ vipSetupData.invoiceNo }}</span>
+                </div>
+                <div class="text-right">
+                  <span class="text-[9px] font-black uppercase text-gray-400 block mb-0.5">Status</span>
+                  <span class="text-[10px] font-black text-emerald-400 flex items-center gap-1 justify-end">
+                    <CheckCircle2 class="w-3 h-3 text-emerald-400" /> PAID & VERIFIED
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Already Setup Quick Link (Moved to left bottom) -->
+            <div class="text-center mt-8 relative z-10 pt-6 border-t border-white/10">
+              <button 
+                @click="isVIPSetupModalOpen = false; isLoginOpen = true;"
+                class="text-[11px] text-gray-400 font-semibold underline underline-offset-4 transition-colors"
+                :class="vipSetupData.plan === 'annual' ? 'hover:text-amber-300' : 'hover:text-blue-300'"
+              >
+                Already setup your account? Sign In & Refresh Status
+              </button>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: Setup Form -->
+          <div class="w-full md:w-7/12 p-6 md:p-8 relative">
+            <button @click="isVIPSetupModalOpen = false" class="absolute top-6 right-6 p-2 rounded-full bg-white/5 hover:bg-white/15 text-white/80 transition-all border border-white/10">
+              <X class="w-4 h-4" />
+            </button>
+
+            <h4 class="text-lg font-bold text-white mb-5 pr-8">Account Credentials</h4>
+            
+            <!-- Account Setup Mode Selector (ALWAYS AVAILABLE) -->
+            <div class="flex items-center gap-2 p-1.5 bg-white/5 border border-white/10 rounded-2xl mb-6">
+              <button 
+                @click="accountSetupMode = 'existing'"
+                class="flex-1 py-3 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                :class="accountSetupMode === 'existing' 
+                  ? (vipSetupData.plan === 'annual' ? 'bg-amber-500 text-black shadow-md font-black' : 'bg-blue-500 text-white shadow-md font-black') 
+                  : 'text-gray-400 hover:text-white'"
+              >
+                <UserIcon class="w-3.5 h-3.5" /> Link Existing Account
+              </button>
+              <button 
+                @click="accountSetupMode = 'new'"
+                class="flex-1 py-3 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                :class="accountSetupMode === 'new' 
+                  ? (vipSetupData.plan === 'annual' ? 'bg-amber-500 text-black shadow-md font-black' : 'bg-blue-500 text-white shadow-md font-black') 
+                  : 'text-gray-400 hover:text-white'"
+              >
+                <Plus class="w-3.5 h-3.5" /> Create New Account
+              </button>
+            </div>
+
+            <!-- Error Alert -->
+            <div v-if="vipSetupError" class="p-3.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[11px] font-semibold mb-5 flex items-center gap-2">
+              <Info class="w-4 h-4 text-rose-400 flex-shrink-0" />
+              <span>{{ vipSetupError }}</span>
+            </div>
+
+            <!-- Mode 1: Link Existing Account -->
+            <div v-if="accountSetupMode === 'existing'" class="space-y-4 mb-8">
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-gray-300 mb-1.5">Existing Username or Email</label>
+                <input v-model="vipSetupData.username" type="text" 
+                  class="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3.5 text-xs text-white placeholder:text-gray-500 focus:outline-none font-semibold transition-colors"
+                  :class="vipSetupData.plan === 'annual' ? 'focus:border-amber-400' : 'focus:border-blue-400'"
+                  placeholder="Enter your existing username" />
+              </div>
+
+              <div>
+                <label class="block text-[10px] font-bold uppercase text-gray-300 mb-1.5">Account Password</label>
+                <div class="relative">
+                  <input 
+                    v-model="vipSetupData.password" 
+                    :type="showVipPassword ? 'text' : 'password'" 
+                    class="w-full bg-white/5 border border-white/15 rounded-xl pl-4 pr-11 py-3.5 text-xs text-white placeholder:text-gray-500 focus:outline-none transition-colors" 
+                    :class="vipSetupData.plan === 'annual' ? 'focus:border-amber-400' : 'focus:border-blue-400'"
+                    placeholder="Enter your existing account password" 
+                  />
+                  <button type="button" @click="showVipPassword = !showVipPassword" class="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-white transition-colors">
+                    <Eye v-if="!showVipPassword" class="w-4 h-4" />
+                    <EyeOff v-else class="w-4 h-4" :class="vipSetupData.plan === 'annual' ? 'text-amber-400' : 'text-blue-400'" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Mode 2: Create New Account -->
+            <div v-else class="space-y-4 mb-8">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-[10px] font-bold uppercase text-gray-300 mb-1.5">Username / Profile Name</label>
+                  <input v-model="vipSetupData.username" type="text" 
+                    class="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3.5 text-xs text-white placeholder:text-gray-500 focus:outline-none font-semibold transition-colors"
+                    :class="vipSetupData.plan === 'annual' ? 'focus:border-amber-400' : 'focus:border-blue-400'"
+                    placeholder="e.g. Alex_Viora" />
+                </div>
+                
+                <!-- Email Address Input -->
+                <div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <label class="block text-[10px] font-bold uppercase text-gray-300">Email Address</label>
+                    <span v-if="isEmailValid" class="text-[9px] font-bold text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 class="w-2.5 h-2.5 text-emerald-400" /> Valid
+                    </span>
+                  </div>
+                  <input 
+                    v-model="vipSetupData.email" 
+                    @blur="isEmailTouched = true"
+                    @input="isEmailTouched = true"
+                    type="email" 
+                    class="w-full bg-white/5 border rounded-xl px-4 py-3.5 text-xs text-white placeholder:text-gray-500 focus:outline-none transition-colors" 
+                    :class="isEmailInvalid ? 'border-rose-500/80 bg-rose-500/10 focus:border-rose-500' : (isEmailValid ? 'border-emerald-500/50 focus:border-emerald-400' : (vipSetupData.plan === 'annual' ? 'border-white/15 focus:border-amber-400' : 'border-white/15 focus:border-blue-400'))"
+                    placeholder="e.g. alex@viora.stream" 
+                  />
+                  <p v-if="isEmailInvalid" class="text-[9px] font-bold text-rose-400 mt-1 flex items-center gap-1 animate-pulse">
+                    <Info class="w-3 h-3 text-rose-400 flex-shrink-0" /> Invalid Email format
+                  </p>
+                </div>
+              </div>
+
+              <!-- Password Field -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <label class="block text-[10px] font-bold uppercase text-gray-300">Account Password</label>
+                    <span v-if="vipSetupData.password" class="text-[9px] font-bold uppercase" :class="passwordStrength.textClass">
+                      {{ passwordStrength.label }}
+                    </span>
+                  </div>
+                  <div class="relative">
+                    <input 
+                      v-model="vipSetupData.password" 
+                      :type="showVipPassword ? 'text' : 'password'" 
+                      class="w-full bg-white/5 border border-white/15 rounded-xl pl-4 pr-11 py-3.5 text-xs text-white placeholder:text-gray-500 focus:outline-none transition-colors"
+                      :class="vipSetupData.plan === 'annual' ? 'focus:border-amber-400' : 'focus:border-blue-400'"
+                      placeholder="Min 6 chars" 
+                    />
+                    <button type="button" @click="showVipPassword = !showVipPassword" class="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white transition-colors">
+                      <Eye v-if="!showVipPassword" class="w-4 h-4" />
+                      <EyeOff v-else class="w-4 h-4" :class="vipSetupData.plan === 'annual' ? 'text-amber-400' : 'text-blue-400'" />
+                    </button>
+                  </div>
+                  <div v-if="vipSetupData.password" class="w-full bg-white/10 h-1 rounded-full mt-2 overflow-hidden">
+                    <div class="h-full transition-all duration-500" :class="[passwordStrength.color, passwordStrength.width]"></div>
+                  </div>
+                </div>
+
+                <!-- Confirm Password Field -->
+                <div>
+                  <div class="flex items-center justify-between mb-1.5">
+                    <label class="block text-[10px] font-bold uppercase text-gray-300">Verify Password</label>
+                    <span v-if="isConfirmPasswordMatched" class="text-[9px] font-bold text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 class="w-2.5 h-2.5 text-emerald-400" /> Match
+                    </span>
+                  </div>
+                  <div class="relative">
+                    <input 
+                      v-model="vipSetupData.confirmPassword" 
+                      @blur="isConfirmPasswordTouched = true"
+                      @input="isConfirmPasswordTouched = true"
+                      :type="showVipConfirmPassword ? 'text' : 'password'" 
+                      class="w-full bg-white/5 border rounded-xl pl-4 pr-11 py-3.5 text-xs text-white placeholder:text-gray-500 focus:outline-none transition-colors" 
+                      :class="isConfirmPasswordMismatch ? 'border-rose-500/80 bg-rose-500/10 focus:border-rose-500' : (isConfirmPasswordMatched ? 'border-emerald-500/50 focus:border-emerald-400' : (vipSetupData.plan === 'annual' ? 'border-white/15 focus:border-amber-400' : 'border-white/15 focus:border-blue-400'))"
+                      placeholder="Re-enter password" 
+                    />
+                    <button type="button" @click="showVipConfirmPassword = !showVipConfirmPassword" class="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white transition-colors">
+                      <Eye v-if="!showVipConfirmPassword" class="w-4 h-4" />
+                      <EyeOff v-else class="w-4 h-4" :class="vipSetupData.plan === 'annual' ? 'text-amber-400' : 'text-blue-400'" />
+                    </button>
+                  </div>
+                  <p v-if="isConfirmPasswordMismatch" class="text-[9px] font-bold text-rose-400 mt-1.5 flex items-center gap-1 animate-pulse">
+                    <Info class="w-3 h-3 text-rose-400 flex-shrink-0" /> Passwords don't match
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action Submit Button -->
+            <button 
+              @click="handleCompleteVIPSetup"
+              :disabled="isVIPSetupSubmitDisabled"
+              class="w-full py-4 rounded-2xl font-black text-sm tracking-wide transition-all duration-500 shadow-xl flex items-center justify-center gap-2 mt-auto"
+              :class="[
+                isVIPSetupSubmitDisabled ? 'opacity-40 cursor-not-allowed grayscale' : 'active:scale-95 cursor-pointer',
+                vipSetupData.plan === 'annual'
+                  ? 'bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-black hover:from-amber-400 hover:to-orange-400 shadow-[0_10px_20px_-10px_rgba(245,158,11,0.5)]'
+                  : 'bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-white hover:from-sky-500 hover:to-indigo-500 shadow-[0_10px_20px_-10px_rgba(56,189,248,0.5)]'
+              ]"
+            >
+              <CheckCircle2 class="w-5 h-5" :class="vipSetupData.plan === 'annual' ? 'text-black' : 'text-cyan-200'" />
+              <span>{{ accountSetupMode === 'existing' ? 'Link & Activate VIP Pass' : 'Create Account & Activate VIP' }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- SUCCESS TOAST NOTIFICATION -->
+    <Transition enter-active-class="transition-all duration-300 ease-out" enter-from-class="opacity-0 translate-y-4" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition-all duration-300 ease-in" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 translate-y-4">
+      <div v-if="paymentSuccessMessage" class="fixed bottom-6 right-6 z-[2000] px-5 py-3.5 rounded-2xl bg-emerald-600/90 text-white font-extrabold text-xs shadow-2xl backdrop-blur-xl border border-emerald-400/40 flex items-center gap-3">
+        <CheckCircle2 class="w-5 h-5 text-emerald-200" />
+        <span>{{ paymentSuccessMessage }}</span>
+      </div>
+    </Transition>
+    <Transition name="fade">
+      <div v-if="isSettingsOpen" class="fixed inset-0 z-[1000] bg-black/80 flex justify-center items-center p-4" @click.self="isSettingsOpen = false">
+        <div 
+          :class="[
+            'w-full max-w-4xl !rounded-[2.5rem] shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9)] relative overflow-hidden transition-all duration-500',
+            uiMode === 'modern' 
+              ? (currentUser.vipPlan === 'admin' 
+                ? 'bg-[#0f0f11] border border-purple-500/40 shadow-[0_25px_80px_-15px_rgba(168,85,247,0.15)]'
+                : (currentUser.vipPlan === 'annual' 
+                  ? 'bg-[#0f0f11] border border-amber-400/40 shadow-[0_25px_80px_-15px_rgba(245,158,11,0.15)]' 
+                  : 'bg-[#0f0f11] border border-cyan-400/40 shadow-[0_25px_80px_-15px_rgba(6,182,212,0.15)]'))
+              : 'liquidGlass-wrapper'
+          ]"
+        >
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-effect !rounded-[2.5rem]"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-tint !rounded-[2.5rem]"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-shine !rounded-[2.5rem]"></div>
+          
+          <div class="w-full p-6 md:p-8 relative z-10" :class="uiMode === 'modern' ? '' : 'liquidGlass-text'">
+            
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
+              <div class="flex items-center gap-3">
+                <div class="p-3 rounded-2xl border transition-colors duration-500"
+                  :class="currentUser.vipPlan === 'admin' ? 'bg-purple-500/20 border-purple-500/30 text-purple-400'
+                    : (currentUser.vipPlan === 'annual' 
+                      ? 'bg-amber-500/20 border-amber-500/30 text-amber-400' 
+                      : 'bg-blue-500/20 border-blue-500/30 text-blue-400')"
+                >
+                  <Settings class="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 class="text-2xl font-black tracking-tight text-white">Account Settings & Management</h3>
+                  <p class="text-xs text-gray-400">Manage your profile, password security & VIP subscription status</p>
+                </div>
+              </div>
+              <button 
+                @click="isSettingsOpen = false" 
+                class="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all border border-white/10 cursor-pointer"
+              >
+                <X class="w-5 h-5" />
+              </button>
+            </div>
+
+            <!-- Horizontal 2-Column Grid Layout -->
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+              
+              <!-- Left Column (5/12) - Membership Card & Quick Actions -->
+              <div class="md:col-span-5 space-y-4">
+                <!-- Membership Subscription Detail Card (DYNAMIC GRADIENT PER TIER) -->
+                <div 
+                  class="p-4 rounded-2xl border transition-all duration-300 shadow-xl"
+                  :class="tierCardStyle.cardClass"
+                >
+                  <div class="flex items-center justify-between mb-3 pb-3 border-b border-white/10">
+                    <div>
+                      <span class="text-[9px] font-black uppercase text-amber-300 block">Subscription Tier Group</span>
+                      <h4 class="text-xs font-black text-white">
+                        {{ tierCardStyle.headerLabel }}
+                      </h4>
+                    </div>
+                    <span 
+                      class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase flex items-center gap-1 flex-shrink-0"
+                      :class="tierCardStyle.badgeClass"
+                    >
+                      <Sparkles v-if="currentUser.vipPlan === 'admin'" class="w-3 h-3 text-purple-300" />
+                      <CheckCircle2 v-else-if="currentUser.vipPlan && currentUser.vipPlan !== 'none'" class="w-3 h-3 text-emerald-400" />
+                      <Lock v-else class="w-3 h-3 text-rose-400" />
+                      {{ tierCardStyle.badgeLabel }}
+                    </span>
+                  </div>
+
+                  <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
+                    <div>
+                      <span class="text-[9px] uppercase font-bold text-gray-400 block">Member Since</span>
+                      <span class="font-semibold text-gray-200 text-[11px]">{{ currentUser.paymentDate || (currentUser.vipPlan === 'admin' ? 'System Lifetime' : 'Payment Required') }}</span>
+                    </div>
+                    <div>
+                      <span class="text-[9px] uppercase font-bold text-gray-400 block">Valid Until</span>
+                      <span class="font-extrabold text-[11px]" :class="tierCardStyle.expiryClass">
+                        {{ currentUser.vipExpiry || (currentUser.vipPlan === 'admin' ? 'Lifetime Access (Forever)' : 'No Active Subscription') }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="space-y-2 pt-2 border-t border-white/10">
+                    <button 
+                      v-if="currentUser.invoiceNo"
+                      @click="isInvoiceModalOpen = true"
+                      class="w-full py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-white transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <CreditCard class="w-3.5 h-3.5 text-amber-300" /> View Tax Invoice
+                    </button>
+                    <button 
+                      @click="isSettingsOpen = false; openVIPModal();"
+                      class="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-black text-white transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Sparkles class="w-3.5 h-3.5 text-amber-300" /> {{ currentUser.vipPlan === 'admin' ? 'Admin Unlimited Granted' : (currentUser.vipPlan && currentUser.vipPlan !== 'none' ? 'Extend / Renew VIP' : 'Choose Plan & Pay via Xendit') }}
+                    </button>
+                  </div>
+                </div>
+
+                <button 
+                  @click="isSettingsOpen = false" 
+                  class="w-full py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white font-bold text-xs transition-all shadow-lg active:scale-95 cursor-pointer"
+                >
+                  Done / Close Settings
+                </button>
+              </div>
+
+              <!-- Right Column (7/12) - Tabbed Horizontal Settings -->
+              <div class="md:col-span-7 space-y-4">
+                
+                <!-- Horizontal Sub-Tabs Header -->
+                <div class="flex items-center p-1 bg-white/5 border border-white/10 rounded-xl">
+                  <button 
+                    @click="settingsActiveTab = 'profile'"
+                    class="flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    :class="settingsActiveTab === 'profile' 
+                      ? (currentUser.vipPlan === 'admin' ? 'bg-purple-600 text-white shadow-md font-black' : (currentUser.vipPlan === 'annual' ? 'bg-amber-500 text-black shadow-md font-black' : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md font-black'))
+                      : 'text-gray-400 hover:text-white'"
+                  >
+                    <UserIcon class="w-3.5 h-3.5" /> Personal Profile
+                  </button>
+                  <button 
+                    @click="settingsActiveTab = 'security'"
+                    class="flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    :class="settingsActiveTab === 'security' 
+                      ? (currentUser.vipPlan === 'admin' ? 'bg-purple-600 text-white shadow-md font-black' : (currentUser.vipPlan === 'annual' ? 'bg-amber-500 text-black shadow-md font-black' : 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md font-black')) 
+                      : 'text-gray-400 hover:text-white'"
+                  >
+                    <KeyRound class="w-3.5 h-3.5" /> Security & Password
+                  </button>
+                </div>
+
+                <!-- Tab 1: Personal Account Profile -->
+                <div v-if="settingsActiveTab === 'profile'" class="space-y-3.5 p-4 rounded-2xl border transition-all duration-300 shadow-xl"
+                  :class="currentUser.vipPlan === 'admin'
+                    ? 'bg-gradient-to-br from-purple-600/25 via-fuchsia-600/20 to-pink-600/20 border-purple-400/50 shadow-[0_10px_35px_rgba(168,85,247,0.2)]'
+                    : (currentUser.vipPlan === 'annual' 
+                      ? 'bg-gradient-to-br from-amber-600/25 via-orange-600/20 to-yellow-600/20 border-amber-400/50 shadow-[0_10px_35px_rgba(245,158,11,0.2)]' 
+                      : 'bg-gradient-to-br from-blue-600/25 via-cyan-600/20 to-teal-600/20 border-cyan-400/50 shadow-[0_10px_35px_rgba(6,182,212,0.2)]')"
+                >
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Username (ID)</label>
+                    <div class="relative">
+                      <input 
+                        type="text" 
+                        :value="currentUser.username" 
+                        disabled 
+                        class="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-gray-300 cursor-not-allowed opacity-80" 
+                      />
+                      <Lock class="w-3.5 h-3.5 text-gray-500 absolute right-3.5 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+
+                  <!-- First Name & Last Name Grid -->
+                  <div class="grid grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">First Name</label>
+                      <input 
+                        v-model="profileForm.firstName"
+                        type="text" 
+                        placeholder="Enter first name" 
+                        class="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none transition-all"
+                        :class="currentUser.vipPlan === 'admin' ? 'focus:border-purple-400' : (currentUser.vipPlan === 'annual' ? 'focus:border-amber-400' : 'focus:border-cyan-400')"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Last Name</label>
+                      <input 
+                        v-model="profileForm.lastName"
+                        type="text" 
+                        placeholder="Enter last name" 
+                        class="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none transition-all"
+                        :class="currentUser.vipPlan === 'admin' ? 'focus:border-purple-400' : (currentUser.vipPlan === 'annual' ? 'focus:border-amber-400' : 'focus:border-cyan-400')"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Email Address</label>
+                    <input 
+                      v-model="profileForm.email"
+                      type="email" 
+                      placeholder="Enter email address" 
+                      class="w-full bg-black/40 border border-white/15 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none transition-all" 
+                      :class="currentUser.vipPlan === 'admin' ? 'focus:border-purple-400' : (currentUser.vipPlan === 'annual' ? 'focus:border-amber-400' : 'focus:border-cyan-400')"
+                    />
+                  </div>
+
+                  <div v-if="profileSaveMessage" class="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /> {{ profileSaveMessage }}
+                  </div>
+                  <div v-if="profileSaveError" class="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
+                    <Info class="w-3.5 h-3.5 text-rose-400 flex-shrink-0" /> {{ profileSaveError }}
+                  </div>
+
+                  <button 
+                    @click="handleSaveProfile"
+                    :disabled="isSavingProfile"
+                    class="w-full py-2.5 rounded-xl font-black text-xs transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                    :class="currentUser.vipPlan === 'admin'
+                      ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 text-white shadow-purple-500/20'
+                      : (currentUser.vipPlan === 'annual'
+                        ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
+                        : 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-cyan-500/20')"
+                  >
+                    <Save class="w-3.5 h-3.5" :class="currentUser.vipPlan === 'annual' ? 'text-black' : 'text-white'" /> {{ isSavingProfile ? 'Saving Profile...' : 'Save Profile Changes' }}
+                  </button>
+                </div>
+
+                <!-- Tab 2: Security & Reset Password Section -->
+                <div v-if="settingsActiveTab === 'security'" class="space-y-3.5 p-4 rounded-2xl border transition-all duration-300 shadow-xl"
+                  :class="currentUser.vipPlan === 'admin'
+                    ? 'bg-gradient-to-br from-purple-600/25 via-fuchsia-600/20 to-pink-600/20 border-purple-400/50 shadow-[0_10px_35px_rgba(168,85,247,0.2)]'
+                    : (currentUser.vipPlan === 'annual' 
+                      ? 'bg-gradient-to-br from-amber-600/25 via-orange-600/20 to-yellow-600/20 border-amber-400/50 shadow-[0_10px_35px_rgba(245,158,11,0.2)]' 
+                      : 'bg-gradient-to-br from-blue-600/25 via-cyan-600/20 to-teal-600/20 border-cyan-400/50 shadow-[0_10px_35px_rgba(6,182,212,0.2)]')"
+                >
+                  <div>
+                    <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1">Current Password</label>
+                    <div class="relative">
+                      <input 
+                        v-model="passwordForm.currentPassword"
+                        :type="showCurrentPasswordReset ? 'text' : 'password'" 
+                        placeholder="Enter current password" 
+                        class="w-full bg-black/40 border border-white/15 rounded-xl pl-3.5 pr-10 py-2 text-xs text-white focus:outline-none transition-all"
+                        :class="currentUser.vipPlan === 'admin' ? 'focus:border-purple-400' : (currentUser.vipPlan === 'annual' ? 'focus:border-amber-400' : 'focus:border-cyan-400')"
+                      />
+                      <button type="button" @click="showCurrentPasswordReset = !showCurrentPasswordReset" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                        <Eye v-if="!showCurrentPasswordReset" class="w-3.5 h-3.5" />
+                        <EyeOff v-else class="w-3.5 h-3.5" :class="currentUser.vipPlan === 'admin' ? 'text-purple-400' : (currentUser.vipPlan === 'annual' ? 'text-amber-400' : 'text-cyan-400')" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- New Password & Confirm New Password Grid -->
+                  <div class="space-y-3">
+                    <div>
+                      <div class="flex items-center justify-between mb-1">
+                        <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-400">New Password</label>
+                        <span v-if="passwordForm.newPassword" class="text-[9px] font-bold uppercase" :class="resetPasswordStrength.textClass">
+                          {{ resetPasswordStrength.label }}
+                        </span>
+                      </div>
+                      <div class="relative">
+                        <input 
+                          v-model="passwordForm.newPassword"
+                          :type="showNewPasswordReset ? 'text' : 'password'" 
+                          placeholder="Min 6 chars & mixed characters" 
+                          class="w-full bg-black/40 border border-white/15 rounded-xl pl-3.5 pr-10 py-2 text-xs text-white focus:outline-none transition-all"
+                          :class="currentUser.vipPlan === 'admin' ? 'focus:border-purple-400' : (currentUser.vipPlan === 'annual' ? 'focus:border-amber-400' : 'focus:border-cyan-400')"
+                        />
+                        <button type="button" @click="showNewPasswordReset = !showNewPasswordReset" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                          <Eye v-if="!showNewPasswordReset" class="w-3.5 h-3.5" />
+                          <EyeOff v-else class="w-3.5 h-3.5" :class="currentUser.vipPlan === 'admin' ? 'text-purple-400' : (currentUser.vipPlan === 'annual' ? 'text-amber-400' : 'text-cyan-400')" />
+                        </button>
+                      </div>
+                      <!-- Animated Password Strength Bar -->
+                      <div v-if="passwordForm.newPassword" class="w-full bg-white/10 h-1.5 rounded-full mt-1.5 overflow-hidden">
+                        <div class="h-full transition-all duration-500" :class="[resetPasswordStrength.color, resetPasswordStrength.width]"></div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div class="flex items-center justify-between mb-1">
+                        <label class="block text-[10px] font-bold uppercase tracking-wider text-gray-400">Confirm New Password</label>
+                        <span v-if="isResetConfirmPasswordMatched" class="text-[9px] font-bold text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 class="w-3 h-3 text-emerald-400" /> Passwords Match
+                        </span>
+                      </div>
+                      <div class="relative">
+                        <input 
+                          v-model="passwordForm.confirmNewPassword"
+                          :type="showConfirmNewPasswordReset ? 'text' : 'password'" 
+                          placeholder="Re-enter new password" 
+                          class="w-full bg-black/40 border rounded-xl pl-3.5 pr-10 py-2 text-xs text-white focus:outline-none transition-all" 
+                          :class="isResetConfirmPasswordMismatch ? 'border-rose-500/80 bg-rose-500/10 focus:border-rose-500' : (isResetConfirmPasswordMatched ? 'border-emerald-500/50 focus:border-emerald-400' : (currentUser.vipPlan === 'admin' ? 'border-white/15 focus:border-purple-400' : (currentUser.vipPlan === 'annual' ? 'border-white/15 focus:border-amber-400' : 'border-white/15 focus:border-cyan-400')))"
+                        />
+                        <button type="button" @click="showConfirmNewPasswordReset = !showConfirmNewPasswordReset" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white">
+                          <Eye v-if="!showConfirmNewPasswordReset" class="w-3.5 h-3.5" />
+                          <EyeOff v-else class="w-3.5 h-3.5" :class="currentUser.vipPlan === 'admin' ? 'text-purple-400' : (currentUser.vipPlan === 'annual' ? 'text-amber-400' : 'text-cyan-400')" />
+                        </button>
+                      </div>
+                      <p v-if="isResetConfirmPasswordMismatch" class="text-[10px] font-bold text-rose-400 mt-1 flex items-center gap-1 animate-pulse">
+                        <Info class="w-3 h-3 text-rose-400 flex-shrink-0" /> Passwords do not match! Please verify your password.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div v-if="passwordSaveMessage" class="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" /> {{ passwordSaveMessage }}
+                  </div>
+                  <div v-if="passwordSaveError" class="p-2.5 rounded-xl bg-rose-500/20 border border-rose-500/40 text-[11px] font-bold text-rose-300 flex items-center gap-1.5">
+                    <Info class="w-3.5 h-3.5 text-rose-400 flex-shrink-0" /> {{ passwordSaveError }}
+                  </div>
+
+                  <button 
+                    @click="handleSavePassword"
+                    :disabled="isSavingPassword || isSavePasswordSubmitDisabled"
+                    class="w-full py-2.5 rounded-xl font-black text-xs transition-all shadow-md flex items-center justify-center gap-1.5"
+                    :class="[
+                      isSavePasswordSubmitDisabled ? 'opacity-40 cursor-not-allowed grayscale' : 'cursor-pointer active:scale-95',
+                      currentUser.vipPlan === 'admin'
+                        ? 'bg-gradient-to-r from-purple-600 to-fuchsia-600 hover:from-purple-500 hover:to-fuchsia-500 text-white shadow-purple-500/20'
+                        : (currentUser.vipPlan === 'annual'
+                          ? 'bg-amber-500 hover:bg-amber-400 text-black shadow-amber-500/20'
+                          : 'bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white shadow-cyan-500/20')
+                    ]"
+                  >
+                    <KeyRound class="w-3.5 h-3.5 text-white" /> {{ isSavingPassword ? 'Updating Password...' : 'Update & Reset Password' }}
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- OFFICIAL VIORA TAX INVOICE RECEIPT MODAL -->
+    <Transition name="fade">
+      <div v-if="isInvoiceModalOpen" class="fixed inset-0 z-[1200] bg-black/75 backdrop-blur-md flex justify-center items-center p-4 overflow-y-auto" @click.self="isInvoiceModalOpen = false">
+        <div class="w-full max-w-lg !rounded-[2.5rem] bg-[#09090b] border border-white/20 p-6 md:p-8 shadow-[0_30px_100px_-15px_rgba(0,0,0,0.95)] relative overflow-hidden my-auto text-white">
+          
+          <!-- Receipt Header -->
+          <div class="flex items-center justify-between pb-4 border-b border-white/10 mb-6">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-black text-xl text-white shadow-lg shadow-blue-600/40">
+                V
+              </div>
+              <div>
+                <h3 class="text-lg font-black tracking-wider text-white uppercase">Viora Cinema</h3>
+                <p class="text-[10px] text-gray-400 uppercase tracking-widest font-semibold">Official Payment Tax Invoice</p>
+              </div>
+            </div>
+            <button @click="isInvoiceModalOpen = false" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white/80 transition-all">
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+
+          <!-- Invoice Details Meta Grid -->
+          <div class="p-4 rounded-2xl bg-white/5 border border-white/10 mb-6 space-y-3 text-xs">
+            <div class="flex items-center justify-between pb-2 border-b border-white/10">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Reference ID</span>
+              <span class="font-mono font-bold text-amber-300">{{ currentUser.referenceId || vipSetupData.invoiceNo || '-' }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Token ID</span>
+              <span class="font-mono text-emerald-300">{{ currentUser.checkoutToken || '-' }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Link ID</span>
+              <span class="font-mono text-blue-300">{{ currentUser.invoiceNo || '-' }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Link Description</span>
+              <span class="font-semibold text-white">{{ currentUser.vipPlan === 'monthly' ? 'Viora VIP Monthly Pass' : 'Viora VIP 1-Year Pass' }}</span>
+            </div>
+            <div class="flex items-center justify-between pt-2 border-t border-white/10">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Status</span>
+              <span class="font-black text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 class="w-3.5 h-3.5 text-emerald-400" /> PAID & VERIFIED
+              </span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Billed To Customer</span>
+              <span class="font-semibold text-white">@{{ currentUser.username || 'VIP_User' }} ({{ currentUser.email || 'vip@viora.stream' }})</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Date</span>
+              <span class="font-semibold text-gray-200">{{ currentUser.paymentDate || 'Aug 20, 2026' }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Valid Until / Expiry</span>
+              <span class="font-extrabold text-emerald-300">{{ currentUser.vipExpiry || 'Aug 20, 2027' }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Gateway</span>
+              <span class="font-semibold text-blue-300">Xendit Official Gateway</span>
+            </div>
+          </div>
+
+          <!-- Itemised Line Items Table -->
+          <div class="p-4 rounded-2xl bg-white/5 border border-white/10 mb-6">
+            <span class="text-[10px] font-black uppercase text-gray-400 block mb-2">Itemised Breakdown</span>
+            <div class="flex items-center justify-between py-2 border-b border-white/10 text-xs">
+              <div>
+                <span class="font-bold text-white block">{{ currentUser.vipPlan === 'monthly' ? 'VIP Monthly Cinema Pass' : 'VIP Annual Cinema Pass' }}</span>
+                <span class="text-[10px] text-gray-400">4K Ultra HD • Ad-Free Cinema • Multi-Device</span>
+              </div>
+              <span class="font-black text-white">{{ currentUser.vipPlan === 'monthly' ? '$1.99 USD' : '$11.99 USD' }}</span>
+            </div>
+            <div class="flex items-center justify-between pt-3 text-xs">
+              <span class="font-black uppercase text-gray-300 text-[10px]">Total Paid Amount</span>
+              <span class="text-base font-black text-amber-300">{{ currentUser.vipPlan === 'monthly' ? '$1.99 USD' : '$11.99 USD' }}</span>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="flex items-center gap-3">
+            <button @click="window.print()" class="flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-bold text-white transition-all flex items-center justify-center gap-2">
+              <Printer class="w-4 h-4 text-blue-400" /> Print Receipt
+            </button>
+            <button @click="isInvoiceModalOpen = false" class="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white transition-all shadow-lg shadow-blue-600/30">
+              Close Receipt
+            </button>
+          </div>
+
         </div>
       </div>
     </Transition>
@@ -2884,12 +4607,24 @@ onUnmounted(() => {
           class="relative w-10 h-10 rounded-full cursor-pointer hover:scale-110 transition-transform duration-300"
           title="Account Profile"
         >
-          <div class="w-full h-full rounded-full bg-white/10 border border-white/25 flex items-center justify-center shadow-[inset_0_1px_1px_rgba(255,255,255,0.2),0_0_14px_3px_rgba(96,165,250,0.4)]">
-            <span v-if="isLoggedIn" class="font-bold text-sm text-white">
+          <div 
+            class="w-full h-full rounded-full border flex items-center justify-center transition-all duration-300"
+            :class="isLoggedIn ? (currentUser.vipPlan === 'admin' ? 'bg-purple-900/50 border-purple-400/80 shadow-[0_0_15px_rgba(168,85,247,0.6)]' : (currentUser.vipPlan === 'annual' ? 'bg-amber-500/20 border-amber-400/80 shadow-[0_0_15px_rgba(245,158,11,0.6)]' : (currentUser.vipPlan === 'monthly' ? 'bg-cyan-500/20 border-cyan-400/80 shadow-[0_0_15px_rgba(6,182,212,0.6)]' : 'bg-rose-950/40 border-rose-500/50 shadow-[0_0_10px_rgba(244,63,94,0.4)]'))) : 'bg-white/10 border-white/25 shadow-[0_0_14px_3px_rgba(96,165,250,0.4)]'"
+          >
+            <span v-if="isLoggedIn" class="font-black text-xs text-white">
               {{ currentUser.username.charAt(0).toUpperCase() }}
             </span>
             <UserIcon v-else class="w-5 h-5 text-white" />
           </div>
+          <span 
+            v-if="isLoggedIn"
+            class="absolute -top-1 -right-1 text-[10px] leading-none drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]"
+          >
+            <span v-if="currentUser.vipPlan === 'admin'">👑</span>
+            <span v-else-if="currentUser.vipPlan === 'annual'">⭐</span>
+            <span v-else-if="currentUser.vipPlan === 'monthly'">🌙</span>
+            <span v-else>🔒</span>
+          </span>
         </div>
       </div>
 
@@ -3003,7 +4738,7 @@ onUnmounted(() => {
 
       <main :class="['relative z-20 space-y-10 pb-20', uiMode === 'classic' ? '-mt-20' : 'mt-8 md:mt-12']">
 
-       <section v-if="isLoggedIn && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
+       <section v-if="hasAccess && watchHistoryMovies.length > 0" class="pl-6 lg:pl-12 pt-4">
           <h3 class="text-2xl font-black mb-8 tracking-tight flex items-center gap-3">
             <span class="w-1.5 h-8 bg-blue-500 rounded-full"></span> Continue Watching
           </h3>
@@ -3043,7 +4778,7 @@ onUnmounted(() => {
                 <!-- Play Icon Hover Overlay (Solid Non-Blur) -->
                 <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center pointer-events-none z-30">
                   <div class="w-12 h-12 md:w-14 md:h-14 rounded-full bg-white text-black shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-center justify-center pl-0.5 scale-75 group-hover:scale-100 transition-transform duration-300 ease-out transform-gpu pointer-events-auto hover:scale-110">
-                    <Lock v-if="!isLoggedIn" class="w-5 h-5 text-black" />
+                    <Lock v-if="!hasAccess" class="w-5 h-5 text-black" />
                     <Play v-else class="w-5 h-5 text-black fill-current" />
                   </div>
                 </div>
@@ -3453,7 +5188,7 @@ onUnmounted(() => {
                       <p class="text-[11px] md:text-xs text-gray-300/90 font-medium leading-relaxed line-clamp-2 md:line-clamp-3 mb-4 max-w-md drop-shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100">{{ movie.overview }}</p>
                       <div class="flex items-center gap-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-200">
                          <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-5 py-2 md:px-6 md:py-2.5 text-white font-bold text-xs md:text-sm transition-colors shadow-lg pointer-events-auto flex items-center gap-2" @click.stop="openPlayer(movie)">
-                            <Lock v-if="!isLoggedIn" class="w-4 h-4 md:w-5 md:h-5" />
+                            <Lock v-if="!hasAccess" class="w-4 h-4 md:w-5 md:h-5" />
                             <Play v-else class="w-4 h-4 md:w-5 md:h-5 fill-current" />
                             <span>{{ !isLoggedIn ? 'Locked' : 'Play' }}</span>
                          </button>
@@ -3510,7 +5245,7 @@ onUnmounted(() => {
                         <div class="flex justify-between items-end mt-2 mb-1 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-500 delay-100">
                            <span class="text-xs font-bold text-gray-300">{{ (movie.release_date || movie.first_air_date)?.substring(0,4) || '' }}</span>
                            <button class="bg-white/10 hover:bg-white/20 border border-white/20 rounded-full px-3 py-1.5 text-white font-bold text-[11px] transition-colors shadow-md pointer-events-auto flex items-center gap-1.5" @click.stop="openPlayer(movie)">
-                              <Lock v-if="!isLoggedIn" class="w-3 h-3" />
+                              <Lock v-if="!hasAccess" class="w-3 h-3" />
                               <Play v-else class="w-3 h-3 fill-current" />
                               <span>{{ !isLoggedIn ? 'Locked' : 'Play' }}</span>
                            </button>
@@ -3803,7 +5538,7 @@ onUnmounted(() => {
                 <!-- Hover Center Play Button -->
                 <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none z-30">
                   <div class="w-12 h-12 md:w-14 md:h-14 bg-white/25 rounded-full flex items-center justify-center border border-white/30 transform scale-50 group-hover:scale-100 transition-transform">
-                    <Lock v-if="!isLoggedIn" class="w-5 h-5 md:w-6 md:h-6 text-white" />
+                    <Lock v-if="!hasAccess" class="w-5 h-5 md:w-6 md:h-6 text-white" />
                     <Play v-else class="w-5 h-5 md:w-6 md:h-6 text-white fill-current" />
                   </div>
                 </div>
@@ -3873,6 +5608,62 @@ onUnmounted(() => {
   100% {
     width: 100%;
   }
+}
+
+@keyframes rainbowSpin {
+  0% { --rainbow-angle: 0deg; }
+  100% { --rainbow-angle: 360deg; }
+}
+
+@keyframes rainbowRotate {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.rainbow-border-card {
+  position: relative;
+  isolation: isolate;
+}
+.rainbow-border-card::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--rainbow-angle, 0deg), #ff0080, #ff7700, #ffff00, #00ff88, #00cfff, #7700ff, #ff0080);
+  z-index: -1;
+  animation: rainbowRotate 3s linear infinite;
+  border-radius: inherit;
+}
+.rainbow-border-card::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: #0a0a0f;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+.rainbow-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.rainbow-btn::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  background: conic-gradient(from var(--rainbow-angle, 0deg), #ff0080, #ff7700, #ffff00, #00ff88, #00cfff, #7700ff, #ff0080);
+  animation: rainbowRotate 2s linear infinite;
+  border-radius: inherit;
+  z-index: -1;
+}
+.rainbow-btn::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: linear-gradient(135deg, #1e40af, #4f46e5, #7c3aed);
+  border-radius: inherit;
+  z-index: -1;
 }
 
 .animate-reveal-v { animation: preloaderLetterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards; }

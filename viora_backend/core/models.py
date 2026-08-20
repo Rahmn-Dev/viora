@@ -34,3 +34,31 @@ class Watchlist(models.Model):
     year = models.CharField(max_length=10, null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class VIPSubscription(models.Model):
+    PLAN_CHOICES = [
+        ('admin', '👑 VIP Supreme Admin Pass (Ultimate Access)'),
+        ('annual', '⭐ VIP Annual Pass (1 Year Access)'),
+        ('monthly', '🌙 VIP Monthly Pass (1 Month Access)'),
+    ]
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='vip_subscription', null=True, blank=True)
+    checkout_token = models.CharField(max_length=100, unique=True, null=True, blank=True)
+    is_claimed = models.BooleanField(default=False)
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='annual')
+    invoice_no = models.CharField(max_length=100, unique=True)
+    status = models.CharField(max_length=20, default='PAID')
+    payment_gateway = models.CharField(max_length=50, default='Xendit Official Gateway')
+    amount_paid = models.CharField(max_length=50, default='$11.99 USD')
+    valid_until = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'VIP Subscription & Invoice'
+        verbose_name_plural = 'VIP Subscriptions & Invoices'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        username = self.user.username if self.user else "Anonymous (Pending)"
+        return f"{username} - {self.get_plan_display()} ({self.invoice_no})"

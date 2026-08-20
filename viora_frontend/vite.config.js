@@ -28,13 +28,19 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    proxy: {
+      '/xendit-api': {
+        target: 'https://api.xendit.co',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/xendit-api/, '')
+      }
+    },
     headers: {
-      // Permissions-Policy: matikan fitur yang dipakai popup/tracker
+      // Permissions-Policy: allow payment for embedded checkout
       'Permissions-Policy': [
         'geolocation=()',
         'camera=()',
         'microphone=()',
-        'payment=()',
         'usb=()',
       ].join(', '),
       'X-Content-Type-Options': 'nosniff',
