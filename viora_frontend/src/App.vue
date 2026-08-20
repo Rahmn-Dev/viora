@@ -317,7 +317,7 @@ const glassMode = ref(localStorage.getItem('viora_glass_mode') || 'edge');
 
 const setGlassMode = (mode) => {
   if (!isLoggedIn.value && mode === 'full') {
-    isProfileOpen.value = false;
+    isCustomizationOpen.value = false;
     isLoginOpen.value = true;
     return;
   }
@@ -378,7 +378,7 @@ const destroyLenis = () => {
 
 const setSmoothScroll = (enabled) => {
   if (!isLoggedIn.value && enabled) {
-    isProfileOpen.value = false;
+    isCustomizationOpen.value = false;
     isLoginOpen.value = true;
     return;
   }
@@ -394,7 +394,7 @@ const modernTheme = ref(localStorage.getItem('viora_modern_theme') || 'cosmic');
 
 const setModernTheme = (themeKey) => {
   if (!isLoggedIn.value && themeKey !== 'cosmic' && themeKey !== 'sand') {
-    isProfileOpen.value = false;
+    isCustomizationOpen.value = false;
     isLoginOpen.value = true;
     return;
   }
@@ -475,6 +475,7 @@ const embedUrl = ref('');
 
 const currentPlayState = ref(null);
 const isSettingsOpen = ref(false);
+const isCustomizationOpen = ref(false);
 
 const isEpisodesSidebarOpen = ref(false);
 const currentSeasonEpisodes = ref([]);
@@ -1071,13 +1072,8 @@ const toggleWatchlist = () => {
 const handleUserIconClick = () => {
   if (isSearchOpen.value) isSearchOpen.value = false;
   if (isWatchlistOpen.value) isWatchlistOpen.value = false;
-  if (isLoggedIn.value) {
-    isProfileOpen.value = !isProfileOpen.value;
-    if (isLoginOpen.value) isLoginOpen.value = false;
-  } else {
-    isLoginOpen.value = !isLoginOpen.value;
-    if (isProfileOpen.value) isProfileOpen.value = false;
-  }
+  isProfileOpen.value = !isProfileOpen.value;
+  isCustomizationOpen.value = false;
 };
 
 const handleWatchlistToggle = async (movie, type = null) => {
@@ -2036,35 +2032,33 @@ onUnmounted(() => {
     <Transition name="vision-pro">
       <div data-lenis-prevent v-if="isWatchlistOpen" class="fixed inset-0 z-[50] flex items-center justify-center p-4 md:p-10 bg-black/0 transition-all duration-300" @click.self="toggleWatchlist">
         
-        <!-- Replaced mix-blend-screen+blur orbs (GPU killer) with CSS gradient — same look, zero GPU cost -->
-        <div class="absolute inset-0 overflow-hidden pointer-events-none" style="background: radial-gradient(circle at 25% 25%, rgba(59,130,246,0.12) 0%, transparent 60%), radial-gradient(circle at 75% 75%, rgba(168,85,247,0.10) 0%, transparent 60%);"></div>
-
-        <aside class="!fixed right-4 md:right-10 top-1/2 -translate-y-1/2 z-50 hidden lg:flex flex-col liquidGlass-wrapper shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] !rounded-full w-16">
+        <!-- Desktop Floating Vertical Navigation Sidebar (Strictly hidden on Mobile/Tablet) -->
+        <aside class="!fixed right-4 md:right-10 top-1/2 -translate-y-1/2 z-50 !hidden lg:!flex flex-col liquidGlass-wrapper shadow-[0_20px_50px_-10px_rgba(0,0,0,0.5)] !rounded-full w-16">
           <div class="liquidGlass-effect !rounded-full"></div>
           <div class="liquidGlass-tint !rounded-full"></div>
           <div class="liquidGlass-shine !rounded-full"></div>
           <div class="liquidGlass-text flex flex-col gap-6 px-3 py-6 items-center w-full relative z-10">
             
-            <div @click="setModalFilter('all')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'all' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+            <div @click="setModalTab('history'); setModalFilter('all');" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'all' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
               <PlayCircle class="w-5 h-5 transition-transform group-hover:scale-110" />
               <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">All History</div>
             </div>
             
             <div class="w-8 h-[1px] bg-white/10 rounded-full"></div>
             
-            <div @click="setModalFilter('movie')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'movie' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+            <div @click="setModalTab('history'); setModalFilter('movie');" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'movie' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
               <Film class="w-5 h-5 transition-transform group-hover:scale-110" />
               <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Movies History</div>
             </div>
             
-            <div @click="setModalFilter('tv')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'tv' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+            <div @click="setModalTab('history'); setModalFilter('tv');" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'history' && modalFilter === 'tv' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
               <Tv class="w-5 h-5 transition-transform group-hover:scale-110" />
               <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">TV Shows History</div>
             </div>
 
             <div class="w-8 h-[1px] bg-white/10 rounded-full"></div>
 
-            <div @click="setModalTab('watchlist')" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'watchlist' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
+            <div @click="setModalTab('watchlist');" class="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 relative group" :class="activeModalTab === 'watchlist' ? 'bg-white text-black shadow-[0_0_15px_rgba(255,255,255,0.4)] scale-110' : 'hover:bg-white/10 text-white/60 hover:text-white'">
               <Bookmark class="w-5 h-5 transition-transform group-hover:scale-110" />
               <div class="absolute right-14 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Saved Items</div>
             </div>
@@ -2072,37 +2066,82 @@ onUnmounted(() => {
           </div>
         </aside>
 
+        <!-- Replaced mix-blend-screen+blur orbs (GPU killer) with CSS gradient — same look, zero GPU cost -->
+        <div class="absolute inset-0 overflow-hidden pointer-events-none" style="background: radial-gradient(circle at 25% 25%, rgba(59,130,246,0.12) 0%, transparent 60%), radial-gradient(circle at 75% 75%, rgba(168,85,247,0.10) 0%, transparent 60%);"></div>
+
+
+
         <div 
           :class="[
-            'shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] !rounded-[3rem] relative w-full max-w-6xl h-[80vh] flex flex-col z-10 overflow-hidden',
-            uiMode === 'modern' ? 'bg-black/40 backdrop-blur-3xl border border-white/20' : 'liquidGlass-wrapper'
+            'shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] !rounded-3xl md:!rounded-[3rem] relative w-full max-w-6xl h-[90vh] md:h-[80vh] flex flex-col z-10 overflow-hidden',
+            uiMode === 'modern' ? 'bg-black/80 md:bg-black/40 backdrop-blur-3xl border border-white/20' : 'liquidGlass-wrapper'
           ]" 
           @click.stop
         >
-          <div v-if="uiMode !== 'modern'" class="liquidGlass-effect !rounded-[3rem]"></div>
-          <div v-if="uiMode !== 'modern'" class="liquidGlass-tint !rounded-[3rem]"></div>
-          <div v-if="uiMode !== 'modern'" class="liquidGlass-shine !rounded-[3rem]"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-effect !rounded-3xl md:!rounded-[3rem]"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-tint !rounded-3xl md:!rounded-[3rem]"></div>
+          <div v-if="uiMode !== 'modern'" class="liquidGlass-shine !rounded-3xl md:!rounded-[3rem]"></div>
           <div class="relative w-full h-full flex flex-col z-10 overflow-hidden" :class="uiMode === 'modern' ? '' : 'liquidGlass-text'">
             
-            <div class="px-8 py-4 md:px-7 md:py-4 flex justify-between items-center border-b border-white/10 bg-white/5 z-20 rounded-t-[3rem]">
-              <div class="flex items-center gap-5">
-                  <div class="p-3.5 bg-white/10 rounded-3xl shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-white/20">
-                    <Play v-if="activeModalTab === 'history'" class="w-4 h-4 text-white fill-white/20" />
-                    <Bookmark v-else class="w-4 h-4 text-white fill-white/20" />
+            <!-- Modal Top Header Bar -->
+            <div class="px-4 py-3 md:px-7 md:py-4 flex flex-col sm:flex-row gap-3 justify-between items-start sm:items-center border-b border-white/10 bg-white/5 z-20 rounded-t-3xl md:rounded-t-[3rem]">
+              <div class="flex items-center gap-3 md:gap-5 w-full sm:w-auto justify-between sm:justify-start">
+                  <div class="flex items-center gap-3">
+                    <div class="p-2.5 md:p-3.5 bg-white/10 rounded-2xl md:rounded-3xl shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-white/20">
+                      <Play v-if="activeModalTab === 'history'" class="w-4 h-4 text-white fill-white/20" />
+                      <Bookmark v-else class="w-4 h-4 text-white fill-white/20" />
+                    </div>
+                    <div>
+                      <h5 class="text-lg md:text-3xl font-extrabold tracking-tight text-white">
+                        {{ activeModalTab === 'history' ? 'My Watch History' : 'Saved Items' }}
+                      </h5>
+                    </div>
                   </div>
-                  <div>
-                    <h5 class="text-xl md:text-3xl font-bold tracking-tight text-white">
-                      {{ activeModalTab === 'history' ? 'My Watch History' : 'Saved Items' }}
-                    </h5>
-                  </div>
+                  <button @click="toggleWatchlist" class="sm:hidden p-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white">
+                    <X class="w-4 h-4" />
+                  </button>
               </div>
               
-              <button @click="toggleWatchlist" class="p-3.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)] transition-all hover:scale-105 active:scale-95">
-                <X class="w-4 h-4 text-white/90" />
-              </button>
+              <div class="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
+                <!-- Mobile Navigation Filter Tabs (Strictly visible on Mobile/Tablet, hidden on Desktop) -->
+                <div class="!flex lg:!hidden items-center gap-1 bg-white/10 p-1 rounded-2xl border border-white/15 overflow-x-auto max-w-full hide-scrollbar">
+                  <button 
+                    @click="setModalTab('history'); setModalFilter('all');" 
+                    class="px-2.5 py-1 rounded-xl text-[11px] font-extrabold transition-all whitespace-nowrap"
+                    :class="activeModalTab === 'history' && modalFilter === 'all' ? 'bg-white text-black shadow-md' : 'text-gray-300 hover:text-white'"
+                  >
+                    All
+                  </button>
+                  <button 
+                    @click="setModalTab('history'); setModalFilter('movie');" 
+                    class="px-2.5 py-1 rounded-xl text-[11px] font-extrabold transition-all whitespace-nowrap"
+                    :class="activeModalTab === 'history' && modalFilter === 'movie' ? 'bg-white text-black shadow-md' : 'text-gray-300 hover:text-white'"
+                  >
+                    Movies
+                  </button>
+                  <button 
+                    @click="setModalTab('history'); setModalFilter('tv');" 
+                    class="px-2.5 py-1 rounded-xl text-[11px] font-extrabold transition-all whitespace-nowrap"
+                    :class="activeModalTab === 'history' && modalFilter === 'tv' ? 'bg-white text-black shadow-md' : 'text-gray-300 hover:text-white'"
+                  >
+                    Series
+                  </button>
+                  <button 
+                    @click="setModalTab('watchlist');" 
+                    class="px-2.5 py-1 rounded-xl text-[11px] font-extrabold transition-all flex items-center gap-1 whitespace-nowrap"
+                    :class="activeModalTab === 'watchlist' ? 'bg-white text-black shadow-md' : 'text-gray-300 hover:text-white'"
+                  >
+                    <Bookmark class="w-3 h-3" /> Saved
+                  </button>
+                </div>
+
+                <button @click="toggleWatchlist" class="hidden sm:flex p-3 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 shadow-md transition-all hover:scale-105 active:scale-95">
+                  <X class="w-4 h-4 text-white/90" />
+                </button>
+              </div>
             </div>
 
-            <div data-lenis-prevent class="flex-1 overflow-y-auto hide-scrollbar p-8 md:p-12 relative z-10 pb-32">
+            <div data-lenis-prevent class="flex-1 overflow-y-auto hide-scrollbar p-4 md:p-12 relative z-10 pb-28">
               
               <template v-if="activeModalTab === 'history'">
                 <div v-if="watchHistoryMovies.length === 0" class="h-full flex flex-col items-center justify-center">
@@ -2168,7 +2207,7 @@ onUnmounted(() => {
                   <p class="text-white/50 mb-8">Save movies and series to watch them later.</p>
                 </div>
 
-                <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                <div v-else class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-6">
                   <div v-for="movie in filteredWatchlistMovies" :key="movie.id" @click="openPlayer(movie)" class="relative flex-none rounded-3xl overflow-hidden bg-black/40 transition-transform duration-500 hover:scale-105 hover:z-40 transform-gpu group cursor-pointer border border-white/10 aspect-[2/3] col-span-1 shadow-2xl">
                     <div class="skeleton-overlay absolute inset-0 bg-white/5 animate-pulse z-0"></div>
                     <img loading="lazy" decoding="async" :src="movie.poster_path || movie.backdrop_path ? getImageUrl(movie.poster_path || movie.backdrop_path, 'w500') : 'https://via.placeholder.com/500x750?text=No+Image'" class="relative z-10 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" style="opacity: 0; transform: scale(1.05);" @load="handleImageLoad" />
@@ -2201,42 +2240,79 @@ onUnmounted(() => {
       <div 
         data-lenis-prevent
         v-if="isSearchOpen"
-        class="fixed inset-0 z-[100] bg-black/0 flex justify-center items-start pt-[12vh]"
+        class="fixed inset-0 z-[100] bg-black/75 md:bg-black/60 flex justify-center items-start pt-3 sm:pt-[8vh] px-3 sm:px-6"
         @click.self="toggleSearch"
       >
 
-        <div class="relative w-full max-w-5xl mx-4 flex gap-4">
+        <div class="relative w-full max-w-5xl flex flex-col md:flex-row gap-4">
 
           <!-- Main Search Panel with Liquid Glass -->
-          <div class="liquidGlass-wrapper flex-1 !rounded-3xl shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] relative overflow-hidden">
+          <div class="liquidGlass-wrapper flex-1 !rounded-3xl shadow-[0_25px_80px_-20px_rgba(0,0,0,1)] relative overflow-hidden flex flex-col max-h-[88vh]">
             <div class="liquidGlass-effect !rounded-3xl"></div>
             <div class="liquidGlass-tint !rounded-3xl"></div>
             <div class="liquidGlass-shine !rounded-3xl"></div>
-            <div class="liquidGlass-text w-full relative z-10">
+            <div class="liquidGlass-text w-full relative z-10 flex flex-col h-full overflow-hidden">
 
-              <div class="flex items-center px-6 py-5 border-b border-white/10 bg-white/5">
-                <Search class="w-6 h-6 text-white mr-4" />
+              <div class="flex items-center px-4 py-3.5 md:px-6 md:py-5 border-b border-white/10 bg-white/5 gap-2">
+                <Search class="w-5 h-5 md:w-6 md:h-6 text-white flex-shrink-0" />
 
                 <input
                   id="viora-search-input"
                   v-model="searchQuery"
                   @input="onSearchInput"
                   placeholder="Search movies, series, or actors..."
-                  class="flex-1 bg-transparent outline-none text-xl text-white placeholder:text-white/80 font-medium
-                  focus:drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]"
+                  class="flex-1 bg-transparent outline-none text-base md:text-xl text-white placeholder:text-white/60 font-medium"
                   autocomplete="off"
                 />
 
                 <button 
                   v-if="searchQuery"
                   @click="searchQuery = ''; searchResults = []"
-                  class="p-1 mr-2 hover:bg-white/10 rounded-full transition"
+                  class="p-1.5 hover:bg-white/10 rounded-full transition"
                 >
-                  <X class="w-5 h-5 text-gray-400" />
+                  <X class="w-4 h-4 text-gray-400" />
                 </button>
 
                 <div class="px-2 py-1 bg-white/10 rounded text-[10px] font-bold text-gray-400 tracking-widest uppercase hidden md:block">
                   ESC
+                </div>
+
+                <!-- Explicit Mobile Close Button -->
+                <button 
+                  @click="toggleSearch" 
+                  class="md:hidden p-2 rounded-full bg-white/10 hover:bg-white/20 text-white ml-1 flex-shrink-0"
+                >
+                  <X class="w-4 h-4" />
+                </button>
+              </div>
+
+              <!-- Mobile Quick Type Filter Row (Type: All / Movies / TV) -->
+              <div class="flex md:hidden items-center justify-between px-4 py-2 bg-black/40 border-b border-white/10 text-xs text-gray-300">
+                <div class="flex items-center gap-1.5">
+                  <button 
+                    @click="selectedType = ''" 
+                    class="px-2.5 py-1 rounded-full text-[11px] font-extrabold transition-all"
+                    :class="selectedType === '' ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-400'"
+                  >
+                    All
+                  </button>
+                  <button 
+                    @click="selectedType = 'movie'" 
+                    class="px-2.5 py-1 rounded-full text-[11px] font-extrabold transition-all"
+                    :class="selectedType === 'movie' ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-400'"
+                  >
+                    Movies
+                  </button>
+                  <button 
+                    @click="selectedType = 'tv'" 
+                    class="px-2.5 py-1 rounded-full text-[11px] font-extrabold transition-all"
+                    :class="selectedType === 'tv' ? 'bg-blue-600 text-white' : 'bg-white/5 text-gray-400'"
+                  >
+                    Series
+                  </button>
+                </div>
+                <div v-if="filteredResults.length > 0" class="text-[10px] font-bold text-blue-400">
+                  {{ filteredResults.length }} items
                 </div>
               </div>
 
@@ -2269,8 +2345,8 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <!-- Rich Watch-History Style Card Grid for Search Results -->
-                <div v-else class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-2">
+                <!-- Rich Watch-History Style Card Grid for Search Results (2 cols on mobile) -->
+                <div v-else class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 gap-3 md:gap-4 p-1 md:p-2">
                   <div 
                     v-for="item in filteredResults"
                     :key="item.id"
@@ -2472,35 +2548,23 @@ onUnmounted(() => {
         </div>
       </div>
     </Transition>
-
+    <!-- 1. ACCOUNT MENU DRAWER (Guest Trial Preview or Logged In VIP Member) -->
     <Transition name="fade">
       <div 
         v-if="isProfileOpen" 
         class="fixed inset-0 z-[95] bg-transparent" 
         @click.self="isProfileOpen = false"
       >
-
         <div 
-          :class="[
-            '!absolute top-[80px] right-6 lg:right-12 w-64 rounded-2xl shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] transition-transform duration-200 ease-out overflow-hidden',
-            uiMode === 'modern' ? 'bg-black/40 backdrop-blur-3xl border border-white/20' : 'liquidGlass-wrapper'
-          ]"
+          class="!absolute top-[80px] right-6 lg:right-12 w-64 rounded-2xl liquidGlass-wrapper shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] transition-transform duration-200 ease-out overflow-hidden"
           :style="glassTransform"
         >
-          <div v-if="uiMode !== 'modern'" class="liquidGlass-effect !rounded-2xl"></div>
-          <div v-if="uiMode !== 'modern'" class="liquidGlass-tint !rounded-2xl"></div>
-          <div v-if="uiMode !== 'modern'" class="liquidGlass-shine !rounded-2xl"></div>
-          <div class="w-full p-2 relative z-10" :class="uiMode === 'modern' ? '' : 'liquidGlass-text'">
-
-            <div 
-              class="absolute inset-0 rounded-2xl pointer-events-none"
-              :style="{
-                background: `radial-gradient(circle at ${50 + mouseX*30}% ${50 + mouseY*30}%, rgba(255,255,255,0.18), transparent 60%)`
-              }"
-            ></div>
+          <div class="liquidGlass-effect !rounded-2xl"></div>
+          <div class="liquidGlass-tint !rounded-2xl"></div>
+          <div class="liquidGlass-shine !rounded-2xl"></div>
+          <div class="liquidGlass-text w-full p-2.5 relative z-10">
 
             <div class="flex items-center gap-3 p-3 mb-2 border-b border-white/10 relative z-10">
-              
               <div class="relative w-10 h-10">
                 <div class="absolute inset-0 rounded-full bg-gradient-to-tr from-blue-500/60 to-blue-400/60 blur-sm opacity-70"></div>
                 <div class="relative w-full h-full rounded-full bg-white/10 border border-white/20 flex items-center justify-center font-bold text-sm text-white shadow-[inset_0_1px_1px_rgba(255,255,255,0.3)]">
@@ -2520,27 +2584,84 @@ onUnmounted(() => {
             </div>
 
             <div class="space-y-1 relative z-10">
+              <template v-if="isLoggedIn">
+                <button
+                  @mousemove="(e) => handleMagnetMove(e, 'settings')"
+                  @mouseleave="resetMagnet"
+                  class="group w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 rounded-xl transition-all text-left hover:bg-white/10 hover:text-white"
+                  :style="activeMagnet === 'settings'
+                    ? { transform: `translate(${magneticOffset.x}px, ${magneticOffset.y}px)` }
+                    : {}"
+                >
+                  <Settings class="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
+                  Account Settings
+                </button>
 
-             <button
-                    v-if="isLoggedIn"
-                    @mousemove="(e) => handleMagnetMove(e, 'settings')"
-                    @mouseleave="resetMagnet"
-                    class="group w-full flex items-center gap-3 p-2.5 text-sm font-medium text-gray-300 rounded-xl transition-all text-left hover:bg-white/10 hover:text-white"
-                    :style="activeMagnet === 'settings'
-                      ? { transform: `translate(${magneticOffset.x}px, ${magneticOffset.y}px)` }
-                      : {}"
-                  >
-                <Settings class="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" />
-                Account Settings
-              </button>
+                <button 
+                  @click="handleLogout"
+                  @mousemove="(e) => handleMagnetMove(e, 'logout')"
+                  @mouseleave="resetMagnet"
+                  class="group w-full flex items-center gap-3 p-2.5 text-sm font-bold text-red-400 rounded-xl transition-all text-left mt-1 hover:bg-red-500/10 hover:text-red-300"
+                  :style="activeMagnet === 'logout'
+                    ? { transform: `translate(${magneticOffset.x}px, ${magneticOffset.y}px)` }
+                    : {}"
+                >
+                  <LogOut class="w-4 h-4 group-hover:scale-110 transition-transform" />
+                  Log Out
+                </button>
+              </template>
 
-              <!-- Liquid Glass Mode Selector in Profile Dropdown -->
-              <div class="px-2 py-2 border-t border-white/10 mt-2 relative z-10">
-                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
-                  <span>Glass Effect</span>
-                  <span class="text-blue-400 capitalize flex items-center gap-1">
-                    {{ glassMode === 'full' ? 'Full' : glassMode === 'edge' ? 'Edge' : 'Pure' }}
+              <template v-else>
+                <button 
+                  @click="isProfileOpen = false; isLoginOpen = true;"
+                  class="group w-full flex items-center justify-between p-3 text-xs font-extrabold text-white bg-blue-600/80 hover:bg-blue-500 rounded-xl transition-all shadow-md active:scale-95"
+                >
+                  <span class="flex items-center gap-2">
+                    <UserIcon class="w-4 h-4" />
+                    Sign In / Membership
                   </span>
+                  <ChevronRight class="w-4 h-4 opacity-70 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              </template>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 2. UI CUSTOMIZATION DRAWER (Sparkles Button ONLY - Glass Effect, UI Style, Smooth Scroll, Themes) -->
+    <Transition name="fade">
+      <div 
+        v-if="isCustomizationOpen" 
+        class="fixed inset-0 z-[95] bg-transparent" 
+        @click.self="isCustomizationOpen = false"
+      >
+        <div 
+          class="!absolute top-[80px] right-6 lg:right-12 w-64 rounded-2xl liquidGlass-wrapper shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] transition-transform duration-200 ease-out overflow-hidden"
+          :style="glassTransform"
+        >
+          <div class="liquidGlass-effect !rounded-2xl"></div>
+          <div class="liquidGlass-tint !rounded-2xl"></div>
+          <div class="liquidGlass-shine !rounded-2xl"></div>
+          <div class="liquidGlass-text w-full p-3 relative z-10">
+
+            <div class="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+              <span class="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+                <Sparkles class="w-3.5 h-3.5 text-amber-400" />
+                Customization
+              </span>
+              <button @click="isCustomizationOpen = false" class="p-1 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors">
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div class="space-y-2 relative z-10">
+              <!-- Liquid Glass Mode Selector -->
+              <div class="px-2 py-1 relative z-10">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5 px-1 flex items-center justify-between">
+                  <span>Glass Effect</span>
+                  <span class="text-blue-400 capitalize">{{ glassMode === 'full' ? 'Full' : glassMode === 'edge' ? 'Edge' : 'Pure' }}</span>
                 </div>
                 <div class="grid grid-cols-3 gap-1 bg-white/5 p-1 rounded-xl border border-white/10">
                   <button 
@@ -2569,8 +2690,8 @@ onUnmounted(() => {
               </div>
 
               <!-- UI Mode Selector -->
-              <div class="px-2 py-2 border-t border-white/10 relative z-10">
-                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
+              <div class="px-2 py-1 border-t border-white/10 pt-2 relative z-10">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5 px-1 flex items-center justify-between">
                   <span>UI Style</span>
                   <span class="text-blue-400 capitalize">{{ uiMode }}</span>
                 </div>
@@ -2594,8 +2715,8 @@ onUnmounted(() => {
               </div>
 
               <!-- Smooth Scroll Toggle (ON / OFF) -->
-              <div class="px-2 py-2 border-t border-white/10 relative z-10">
-                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
+              <div class="px-2 py-1 border-t border-white/10 pt-2 relative z-10">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5 px-1 flex items-center justify-between">
                   <span>Smooth Scroll</span>
                   <span class="text-blue-400 capitalize font-extrabold">{{ isSmoothScrollEnabled ? 'Enabled' : 'Native' }}</span>
                 </div>
@@ -2620,8 +2741,8 @@ onUnmounted(() => {
 
               <!-- Modern Ambient Theme Selector (Visible when Modern Stack is active) -->
               <Transition enter-active-class="transition-all duration-300" enter-from-class="opacity-0 -translate-y-1" enter-to-class="opacity-100 translate-y-0">
-                <div v-if="uiMode === 'modern'" class="px-2 py-2 border-t border-white/10 relative z-10">
-                  <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2 px-1 flex items-center justify-between">
+                <div v-if="uiMode === 'modern'" class="px-2 py-1 border-t border-white/10 pt-2 relative z-10">
+                  <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5 px-1 flex items-center justify-between">
                     <span>Modern Ambient</span>
                     <span class="text-amber-400 capitalize font-extrabold">{{ modernTheme }}</span>
                   </div>
@@ -2680,30 +2801,6 @@ onUnmounted(() => {
                   </div>
                 </div>
               </Transition>
-
-             <button 
-                  v-if="isLoggedIn"
-                  @click="handleLogout"
-                  @mousemove="(e) => handleMagnetMove(e, 'logout')"
-                  @mouseleave="resetMagnet"
-                  class="group w-full flex items-center gap-3 p-2.5 text-sm font-bold text-red-400 rounded-xl transition-all text-left mt-1 hover:bg-red-500/10 hover:text-red-300"
-                  :style="activeMagnet === 'logout'
-                    ? { transform: `translate(${magneticOffset.x}px, ${magneticOffset.y}px)` }
-                    : {}"
-                >
-                <LogOut class="w-4 h-4 group-hover:scale-110 transition-transform" />
-                Log Out
-              </button>
-
-              <button 
-                  v-else
-                  @click="isProfileOpen = false; isLoginOpen = true;"
-                  class="group w-full flex items-center gap-3 p-2.5 text-sm font-bold text-blue-400 rounded-xl transition-all text-left mt-1 hover:bg-blue-500/10 hover:text-blue-300"
-                >
-                <UserIcon class="w-4 h-4 group-hover:scale-110 transition-transform" />
-                Sign In
-              </button>
-
             </div>
 
           </div>
@@ -2774,7 +2871,7 @@ onUnmounted(() => {
       <div class="flex items-center gap-3 pointer-events-auto">
         <!-- UI Style & Customization Quick Switcher Button -->
         <button 
-          @click="isProfileOpen = !isProfileOpen" 
+          @click="isCustomizationOpen = !isCustomizationOpen; isProfileOpen = false;" 
           class="relative p-2.5 rounded-full bg-white/10 border border-white/20 hover:bg-white/20 hover:scale-110 transition-all duration-300 flex items-center justify-center group shadow-md"
           title="UI Style & Customization"
         >
