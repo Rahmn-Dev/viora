@@ -187,46 +187,6 @@ def api_change_password(request):
     return Response({'detail': 'Password successfully changed.'})
 
 
-@api_view(['POST'])
-def api_save_vip_subscription(request):
-    """Save or update official VIP Subscription to Django Database."""
-    if not request.user.is_authenticated:
-        return Response({'detail': 'Authentication required.'}, status=401)
-    
-    plan = request.data.get('plan', 'annual')
-    invoice_no = request.data.get('invoice_no', f"viora-vip-{plan}-{int(time.time())}")
-    expiry_date = request.data.get('expiry_date', 'Aug 20, 2027')
-    amount_paid = request.data.get('amount_paid', '$11.99 USD' if plan == 'annual' else '$1.99 USD')
-    gateway = request.data.get('payment_gateway', 'Xendit Official Gateway')
-
-    # Default to 365 days if no explicit date given
-    if not expiry_date or expiry_date == 'Aug 20, 2027':
-        calculated_expiry = timezone.now() + timedelta(days=365) if plan == 'annual' else timezone.now() + timedelta(days=30)
-    else:
-        calculated_expiry = timezone.now() + timedelta(days=365)
-
-    sub, created = VIPSubscription.objects.update_or_create(
-        user=request.user,
-        defaults={
-            'plan': plan,
-            'invoice_no': invoice_no,
-            'status': 'PAID',
-            'payment_gateway': gateway,
-            'amount_paid': amount_paid,
-            'valid_until': calculated_expiry
-        }
-    )
-
-    return Response({
-        'detail': 'VIP Subscription successfully saved to database.',
-        'subscription': {
-            'plan': sub.plan,
-            'invoice_no': sub.invoice_no,
-            'status': sub.status,
-            'valid_until': sub.valid_until
-        }
-    })
-
 
 @api_view(['POST'])
 @throttle_classes([AnonRateThrottle, UserRateThrottle])
@@ -388,7 +348,7 @@ def api_create_invoice(request):
     amount = 249000 if plan == 'annual' else 29000
     description = "Viora VIP 1-Year Pass" if plan == 'annual' else "Viora VIP Monthly Pass"
     
-    xendit_key = os.environ.get('XENDIT_API_KEY', 'xnd_development_elq1dZXUsFhaHeIVOZUZopKMC8jcDV7mgBlMwYMWrqT1FdOnGBNJWQ8S4Y49V')
+    xendit_key = os.environ.get('XENDIT_API_KEY', '')
     
     external_id = f"viora-vip-{plan}-{int(time.time())}"
     
@@ -455,7 +415,7 @@ def api_check_invoice_status(request):
         return Response({'status': 'PAID'})
         
     # Ask Xendit server-to-server
-    xendit_key = os.environ.get('XENDIT_API_KEY', 'xnd_development_elq1dZXUsFhaHeIVOZUZopKMC8jcDV7mgBlMwYMWrqT1FdOnGBNJWQ8S4Y49V')
+    xendit_key = os.environ.get('XENDIT_API_KEY', '')
     auth_str = f"{xendit_key}:"
     b64_auth = base64.b64encode(auth_str.encode()).decode()
     

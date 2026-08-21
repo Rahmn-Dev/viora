@@ -9,7 +9,6 @@ from core.views import (
     api_login,
     api_logout,
     api_me,
-    api_save_vip_subscription,
     api_update_profile,
     api_change_password,
     api_register,
@@ -41,8 +40,6 @@ urlpatterns = [
     path('api/me/', api_me),
     path('api/update-profile/', api_update_profile),
     path('api/change-password/', api_change_password),
-    path('api/save-vip-subscription/', api_save_vip_subscription),
-   
     # Watch History
     path('api/watch-history/', UpdateWatchHistoryView.as_view(), name='update_watch_history'),
 
