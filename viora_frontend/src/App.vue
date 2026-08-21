@@ -425,6 +425,14 @@ const setModernTheme = (themeKey) => {
     isLoginOpen.value = true;
     return;
   }
+
+  // Block premium themes for free users and trigger upsell
+  if (isLoggedIn.value && !hasAccess.value && themeKey !== 'cosmic' && themeKey !== 'crimson') {
+    isCustomizationOpen.value = false;
+    openVIPModal();
+    return;
+  }
+
   modernTheme.value = themeKey;
   localStorage.setItem('viora_modern_theme', themeKey);
 };
