@@ -63,7 +63,8 @@ def get_user_subscription_payload(user):
             'reference_id': f"viora-vip-{sub.plan}-{int(sub.created_at.timestamp())}",
             'payment_status': sub.status,
             'payment_gateway': sub.payment_gateway,
-            'payment_date': sub.created_at.strftime("%b %d, %Y") if hasattr(sub.created_at, 'strftime') else str(sub.created_at)
+            'payment_amount': sub.amount_paid,
+            'payment_date': sub.created_at.strftime("%b %d, %Y %H:%M") if hasattr(sub.created_at, 'strftime') else str(sub.created_at)
         }
     except Exception:
         # 🔒 Rule 3: Pengguna Tanpa Pembayaran / Belum Bayar
@@ -80,6 +81,7 @@ def get_user_subscription_payload(user):
             'invoice_no': '',
             'payment_status': 'UNPAID',
             'payment_gateway': 'N/A',
+            'payment_amount': 'Rp 0',
             'payment_date': 'Payment Required'
         }
 
@@ -500,3 +502,215 @@ def api_link_invoice(request):
     sub.save()
     
     return Response({'detail': 'Invoice linked successfully'})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MIDTRANS SNAP PAYMENT GATEWAY
+# ─────────────────────────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def api_midtrans_create_transaction(request):
+    """Create a Midtrans Snap transaction and return the snap_token."""
+    plan = request.data.get('plan', 'monthly')
+
+    amount = 249000 if plan == 'annual' else 29000
+    description = "Viora VIP 1-Year Cinema Pass" if plan == 'annual' else "Viora VIP Monthly Cinema Pass"
+
+    server_key = os.environ.get('MIDTRANS_SERVER_KEY', '')
+    merchant_id = os.environ.get('MIDTRANS_MERCHANT_ID', 'M382636639')
+    midtrans_env = os.environ.get('MIDTRANS_ENV', 'sandbox')  # 'sandbox' | 'production'
+
+    order_id = f"viora-vip-{plan}-{int(time.time())}-{str(uuid.uuid4())[:8]}"
+
+    auth_str = f"{server_key}:"
+    b64_auth = base64.b64encode(auth_str.encode()).decode()
+
+    headers = {
+        'Authorization': f'Basic {b64_auth}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    }
+
+    payload = {
+        'transaction_details': {
+            'order_id': order_id,
+            'gross_amount': amount
+        },
+        'item_details': [{
+            'id': f'viora-vip-{plan}',
+            'price': amount,
+            'quantity': 1,
+            'name': description
+        }],
+        'credit_card': {
+            'secure': True
+        },
+        'callbacks': {
+            'finish': 'https://viora.stream/?midtrans_payment=success'
+        }
+    }
+
+    # Use sandbox or production URL based on MIDTRANS_ENV
+    is_sandbox = midtrans_env != 'production'
+    snap_base_url = 'https://app.sandbox.midtrans.com' if is_sandbox else 'https://app.midtrans.com'
+
+    try:
+        resp = requests.post(
+            f'{snap_base_url}/snap/v1/transactions',
+            json=payload,
+            headers=headers,
+            timeout=15
+        )
+    except Exception as e:
+        return Response({'detail': f'Connection error to Midtrans: {str(e)}'}, status=500)
+
+    if resp.status_code not in [200, 201]:
+        # Return the full Midtrans error message so we can debug
+        try:
+            midtrans_error = resp.json()
+        except Exception:
+            midtrans_error = resp.text
+        return Response({
+            'detail': 'Midtrans API error',
+            'midtrans_status': resp.status_code,
+            'midtrans_response': midtrans_error
+        }, status=500)
+
+
+    data = resp.json()
+    snap_token = data.get('token')
+    snap_redirect_url = data.get('redirect_url')
+
+    # Generate secure checkout token
+    checkout_token = str(uuid.uuid4())
+
+    # Create PENDING VIP Subscription
+    VIPSubscription.objects.create(
+        user=None,
+        plan=plan,
+        invoice_no=order_id,
+        status='PENDING',
+        payment_gateway='Midtrans Snap',
+        amount_paid='Rp 249.000' if plan == 'annual' else 'Rp 29.000',
+        valid_until=timezone.now() + timedelta(days=365) if plan == 'annual' else timezone.now() + timedelta(days=30),
+        checkout_token=checkout_token,
+        is_claimed=False
+    )
+
+    return Response({
+        'snap_token': snap_token,
+        'snap_redirect_url': snap_redirect_url,
+        'order_id': order_id,
+        'checkout_token': checkout_token
+    })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def api_midtrans_check_status(request):
+    """Check Midtrans transaction status and update DB if paid."""
+    order_id = request.data.get('order_id')
+    checkout_token = request.data.get('checkout_token')
+
+    try:
+        sub = VIPSubscription.objects.get(invoice_no=order_id, checkout_token=checkout_token)
+    except VIPSubscription.DoesNotExist:
+        return Response({'detail': 'Invalid order or token'}, status=403)
+
+    if sub.status == 'PAID':
+        return Response({'status': 'PAID'})
+
+    # Query Midtrans server-to-server
+    server_key = os.environ.get('MIDTRANS_SERVER_KEY', '')
+    midtrans_env = os.environ.get('MIDTRANS_ENV', 'sandbox')  # 'sandbox' | 'production'
+    auth_str = f"{server_key}:"
+    b64_auth = base64.b64encode(auth_str.encode()).decode()
+
+    headers = {'Authorization': f'Basic {b64_auth}'}
+
+    # Use sandbox or production URL based on MIDTRANS_ENV
+    is_sandbox = midtrans_env != 'production'
+    api_base_url = 'https://api.sandbox.midtrans.com' if is_sandbox else 'https://api.midtrans.com'
+
+    resp = requests.get(
+        f'{api_base_url}/v2/{order_id}/status',
+        headers=headers
+    )
+
+    if resp.status_code == 200:
+        data = resp.json()
+        transaction_status = data.get('transaction_status')
+        fraud_status = data.get('fraud_status')
+
+        if transaction_status in ['capture', 'settlement'] and fraud_status in ['accept', None]:
+            sub.status = 'PAID'
+            sub.save()
+            return Response({'status': 'PAID'})
+        elif transaction_status in ['deny', 'cancel', 'expire', 'failure']:
+            return Response({'status': 'FAILED'})
+
+    return Response({'status': 'PENDING'})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def api_midtrans_link_account(request):
+    """Link a paid Midtrans order to the authenticated user's account."""
+    order_id = request.data.get('order_id')
+    checkout_token = request.data.get('checkout_token')
+
+    try:
+        sub = VIPSubscription.objects.get(invoice_no=order_id, checkout_token=checkout_token)
+    except VIPSubscription.DoesNotExist:
+        return Response({'detail': 'Order not found or invalid token'}, status=403)
+
+    if sub.is_claimed:
+        return Response({'detail': 'Order already claimed'}, status=403)
+
+    if sub.status != 'PAID':
+        # Verify with Midtrans one last time just in case webhook/polling missed it
+        server_key = os.environ.get('MIDTRANS_SERVER_KEY', '')
+        midtrans_env = os.environ.get('MIDTRANS_ENV', 'sandbox')
+        auth_str = f"{server_key}:"
+        b64_auth = base64.b64encode(auth_str.encode()).decode()
+        headers = {'Authorization': f'Basic {b64_auth}'}
+        api_base_url = 'https://api.sandbox.midtrans.com' if midtrans_env != 'production' else 'https://api.midtrans.com'
+        
+        try:
+            resp = requests.get(f'{api_base_url}/v2/{order_id}/status', headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get('transaction_status') in ['capture', 'settlement'] and data.get('fraud_status') in ['accept', None]:
+                    sub.status = 'PAID'
+                    sub.save()
+        except Exception:
+            pass
+            
+        if sub.status != 'PAID':
+            return Response({'detail': 'Order not paid yet'}, status=400)
+
+    # Logic Netflix: Accumulate / Extend Subscription
+    try:
+        old_sub = request.user.vip_subscription
+    except Exception:
+        old_sub = None
+
+    if old_sub and old_sub.valid_until and old_sub.valid_until > timezone.now():
+        days_bought = 365 if sub.plan == 'annual' else 30
+        sub.valid_until = old_sub.valid_until + timedelta(days=days_bought)
+        
+        # If they had an annual pass but bought a monthly pass, keep the 'annual' badge/tier
+        if old_sub.plan == 'annual' and sub.plan == 'monthly':
+            sub.plan = 'annual'
+
+    # Remove the old subscription since we enforce OneToOneField
+    VIPSubscription.objects.filter(user=request.user).exclude(id=sub.id).delete()
+
+    # Link!
+    sub.user = request.user
+    sub.is_claimed = True
+    sub.save()
+
+    return Response({'detail': 'Midtrans order linked successfully'})
+

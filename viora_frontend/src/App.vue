@@ -1,7 +1,7 @@
 <script setup>
 
 import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue';
-import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, Menu, Maximize, Minimize, Lock, Subtitles, Volume2, CheckCircle2, CreditCard, QrCode, Building2, Globe, DollarSign, Printer, KeyRound, Save } from 'lucide-vue-next';
+import { Search, Home, Clapperboard, MonitorPlay, Bookmark, Play, Heart, Plus, User as UserIcon, Star, Flame, Check, X, Loader2, LogOut, Settings, Info, Filter, Tv, Film, PlayCircle, RadioTower, Eye, EyeOff, Sparkles, Layers, Server, ChevronDown, ChevronRight, Menu, Maximize, Minimize, Lock, Subtitles, Volume2, CheckCircle2, CreditCard, QrCode, Building2, Globe, DollarSign, Printer, KeyRound, Save } from 'lucide-vue-next';
 import Lenis from 'lenis';
 import axios from 'axios';
 import { Button } from '@/components/ui/button';
@@ -420,7 +420,7 @@ const isSwitchingUI = ref(false);
 const modernTheme = ref(localStorage.getItem('viora_modern_theme') || 'cosmic');
 
 const setModernTheme = (themeKey) => {
-  if (!isLoggedIn.value && themeKey !== 'cosmic' && themeKey !== 'sand') {
+  if (!isLoggedIn.value && themeKey !== 'cosmic') {
     isCustomizationOpen.value = false;
     isLoginOpen.value = true;
     return;
@@ -429,6 +429,12 @@ const setModernTheme = (themeKey) => {
   localStorage.setItem('viora_modern_theme', themeKey);
 };
 
+const applyDefaultThemeForPlan = (plan) => {
+  if (plan === 'annual') setModernTheme('sand');
+  else if (plan === 'monthly') setModernTheme('frost');
+  else if (plan === 'admin') setModernTheme('violet');
+  else setModernTheme('crimson');
+};
 // --- GUEST MODERN STACK TRIAL STATE (90s limit for unauthenticated users) ---
 const guestModernTimer = ref(null);
 const guestModernTimeLeft = ref(90);
@@ -519,7 +525,7 @@ const vipSetupData = ref({
   plan: 'annual',
   expiryDate: '',
   invoiceNo: '',
-  paymentGateway: 'Xendit Official Gateway'
+  paymentGateway: 'Midtrans Snap',
 });
 const showVipPassword = ref(false);
 const showVipConfirmPassword = ref(false);
@@ -613,8 +619,8 @@ const handleSavePassword = async () => {
   }
 };
 const selectedVIPPlan = ref('annual'); // 'monthly' | 'annual'
-const selectedPaymentMethod = ref('xendit'); // 'xendit'
-const userCurrency = ref('USD'); // Default currency is USD ($)
+const selectedPaymentMethod = ref('midtrans'); // 'midtrans' | 'xendit' (xendit disabled)
+const userCurrency = ref('IDR'); // Default currency is IDR for Midtrans
 const paymentCardData = ref({
   cardNumber: '4532 8912 3456 7890',
   expiry: '12/28',
@@ -629,6 +635,12 @@ const activeXenditInvoiceId = ref('');
 const activeCheckoutToken = ref('');
 const activeXenditInvoiceUrl = ref('');
 const xenditPollingTimer = ref(null);
+// Midtrans state
+const activeMidtransOrderId = ref('');
+const activeMidtransCheckoutToken = ref('');
+const midtransPollingTimer = ref(null);
+const MIDTRANS_CLIENT_KEY = 'Mid-client-djZuY6Q5sV6F1eJH';
+const MIDTRANS_IS_SANDBOX = true; // set false when going production
 
 // --- LUHN ALGORITHM & CARD VALIDATION ---
 const isValidLuhn = (cardNumberStr) => {
@@ -712,7 +724,7 @@ const tierCardStyle = computed(() => {
     return {
       cardClass: 'bg-gradient-to-br from-purple-900/40 via-indigo-900/40 to-fuchsia-900/30 border-purple-400/50 shadow-[0_10px_35px_rgba(168,85,247,0.25)]',
       badgeClass: 'bg-purple-500/25 text-purple-300 border-purple-400/50',
-      badgeLabel: '👑 Admin',
+      badgeLabel: '👑 Admin Pass',
       expiryClass: 'text-purple-300',
       headerLabel: '👑 VIP Supreme Admin Pass (Ultimate Access)'
     };
@@ -720,7 +732,7 @@ const tierCardStyle = computed(() => {
     return {
       cardClass: 'bg-gradient-to-br from-amber-500/25 via-orange-600/20 to-yellow-600/20 border-amber-400/50 shadow-[0_10px_35px_rgba(245,158,11,0.2)]',
       badgeClass: 'bg-amber-500/25 text-amber-300 border-amber-400/50',
-      badgeLabel: '⭐ VIP Annual',
+      badgeLabel: '⭐ VIP Annual Pass',
       expiryClass: 'text-amber-300',
       headerLabel: '⭐ VIP Annual Pass (1 Year Access)'
     };
@@ -728,7 +740,7 @@ const tierCardStyle = computed(() => {
     return {
       cardClass: 'bg-gradient-to-br from-blue-600/25 via-cyan-600/20 to-teal-600/20 border-cyan-400/50 shadow-[0_10px_35px_rgba(6,182,212,0.2)]',
       badgeClass: 'bg-cyan-500/25 text-cyan-300 border-cyan-400/50',
-      badgeLabel: '🌙 VIP Monthly',
+      badgeLabel: '🌙 VIP Monthly Pass',
       expiryClass: 'text-cyan-300',
       headerLabel: '🌙 VIP Monthly Pass (1 Month Access)'
     };
@@ -803,6 +815,8 @@ const isSavePasswordSubmitDisabled = computed(() => {
 const triggerVIPSetup = (planType = 'annual') => {
   if (xenditPollingTimer.value) clearInterval(xenditPollingTimer.value);
   xenditPollingTimer.value = null;
+  if (midtransPollingTimer.value) clearInterval(midtransPollingTimer.value);
+  midtransPollingTimer.value = null;
 
   const targetPlan = (typeof planType === 'string') ? planType : (selectedVIPPlan.value || 'annual');
   const now = new Date();
@@ -816,7 +830,10 @@ const triggerVIPSetup = (planType = 'annual') => {
   }
 
   const planTag = targetPlan === 'annual' ? 'year' : 'month';
-  const generatedInvoiceNo = activeXenditInvoiceId.value || `viora-vip-${planTag}-${Date.now()}`;
+  const activeOrderId = selectedPaymentMethod.value === 'midtrans' 
+    ? (activeMidtransOrderId.value || `viora-vip-${planTag}-${Date.now()}`)
+    : (activeXenditInvoiceId.value || `viora-vip-${planTag}-${Date.now()}`);
+  const gatewayLabel = selectedPaymentMethod.value === 'midtrans' ? 'Midtrans Snap' : 'Xendit Official Gateway';
 
   if (isLoggedIn.value && currentUser.value.username) {
     accountSetupMode.value = 'existing';
@@ -831,8 +848,8 @@ const triggerVIPSetup = (planType = 'annual') => {
     confirmPassword: '',
     plan: targetPlan,
     expiryDate: expiryStr,
-    invoiceNo: generatedInvoiceNo,
-    paymentGateway: 'Xendit Official Gateway'
+    invoiceNo: activeOrderId,
+    paymentGateway: gatewayLabel
   };
   showVipPassword.value = false;
   showVipConfirmPassword.value = false;
@@ -863,11 +880,18 @@ const handleCompleteVIPSetup = async () => {
         password: vipSetupData.value.password
       });
 
-      // 2. Secure Linking (Anti-Hijack)
-      await api.post('/api/xendit/link-account/', {
-        invoice_id: activeXenditInvoiceId.value,
-        checkout_token: activeCheckoutToken.value
-      });
+      // 2. Secure Linking — detect which gateway was used
+      if (selectedPaymentMethod.value === 'midtrans') {
+        await api.post('/api/midtrans/link-account/', {
+          order_id: activeMidtransOrderId.value,
+          checkout_token: activeMidtransCheckoutToken.value
+        });
+      } else {
+        await api.post('/api/xendit/link-account/', {
+          invoice_id: activeXenditInvoiceId.value,
+          checkout_token: activeCheckoutToken.value
+        });
+      }
 
       // 3. Update Frontend State
       const meRes = await api.get('/api/me/');
@@ -881,9 +905,11 @@ const handleCompleteVIPSetup = async () => {
         referenceId: meRes.data.reference_id || '',
         paymentStatus: meRes.data.payment_status || 'UNPAID',
         paymentGateway: meRes.data.payment_gateway || 'N/A',
+        paymentAmount: meRes.data.payment_amount || 'N/A',
         paymentDate: meRes.data.payment_date || 'Payment Required'
       };
       isLoggedIn.value = true;
+      applyDefaultThemeForPlan(currentUser.value.vipPlan);
       localStorage.setItem('viora_auth_user', currentUser.value.username);
       localStorage.setItem('viora_user_data', JSON.stringify(currentUser.value));
 
@@ -937,11 +963,18 @@ const handleCompleteVIPSetup = async () => {
       confirm_password: vipSetupData.value.confirmPassword
     });
 
-    // 2. Secure Linking (Anti-Hijack)
-    await api.post('/api/xendit/link-account/', {
-      invoice_id: activeXenditInvoiceId.value,
-      checkout_token: activeCheckoutToken.value
-    });
+    // 2. Secure Linking — detect which gateway was used
+    if (selectedPaymentMethod.value === 'midtrans') {
+      await api.post('/api/midtrans/link-account/', {
+        order_id: activeMidtransOrderId.value,
+        checkout_token: activeMidtransCheckoutToken.value
+      });
+    } else {
+      await api.post('/api/xendit/link-account/', {
+        invoice_id: activeXenditInvoiceId.value,
+        checkout_token: activeCheckoutToken.value
+      });
+    }
 
     // 3. LOGOUT IMMEDIATELY so the user is forced to login manually as requested!
     await api.post('/api/logout/').catch(() => null);
@@ -1027,7 +1060,7 @@ const detectUserCurrency = () => {
 
 const monthlyPriceText = computed(() => userCurrency.value === 'USD' ? '$1.99' : 'Rp 29.000');
 const annualPriceText = computed(() => userCurrency.value === 'USD' ? '$11.99' : 'Rp 249.000');
-const annualEquivalentText = computed(() => userCurrency.value === 'USD' ? 'Equivalent to $0.99/mo (SAVE 50%)' : 'Equivalent to Rp 20k/mo');
+const annualEquivalentText = computed(() => userCurrency.value === 'USD' ? 'Equivalent to $0.99/mo (SAVE 50%)' : 'Equivalent to Rp 20k/mo (SAVE 50%)');
 const payButtonPriceText = computed(() => {
   if (selectedVIPPlan.value === 'annual') return userCurrency.value === 'USD' ? '$11.99' : 'Rp 249.000';
   return userCurrency.value === 'USD' ? '$1.99' : 'Rp 29.000';
@@ -1042,11 +1075,105 @@ const openVIPModal = () => {
   isVIPModalOpen.value = true;
 };
 
+const loadMidtransSnap = () => {
+  return new Promise((resolve, reject) => {
+    if (window.snap) return resolve();
+    const script = document.createElement('script');
+    // Switch URL based on MIDTRANS_IS_SANDBOX flag
+    const snapJsUrl = MIDTRANS_IS_SANDBOX
+      ? 'https://app.sandbox.midtrans.com/snap/snap.js'
+      : 'https://app.midtrans.com/snap/snap.js';
+    script.src = snapJsUrl;
+    script.setAttribute('data-client-key', MIDTRANS_CLIENT_KEY);
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+const startMidtransPolling = (orderId) => {
+  if (midtransPollingTimer.value) clearInterval(midtransPollingTimer.value);
+  midtransPollingTimer.value = setInterval(async () => {
+    try {
+      const res = await api.post('/api/midtrans/check-status/', {
+        order_id: orderId,
+        checkout_token: activeMidtransCheckoutToken.value
+      }).catch(() => null);
+
+      if (res && res.data && res.data.status === 'PAID') {
+        clearInterval(midtransPollingTimer.value);
+        midtransPollingTimer.value = null;
+        isPaymentPaidSuccess.value = true;
+        setTimeout(() => {
+          isPaymentPaidSuccess.value = false;
+          triggerVIPSetup(selectedVIPPlan.value);
+        }, 1000);
+      } else if (res && res.data && res.data.status === 'FAILED') {
+        clearInterval(midtransPollingTimer.value);
+        midtransPollingTimer.value = null;
+        isProcessingPayment.value = false;
+      }
+    } catch (e) {
+      console.log('Midtrans polling error:', e);
+    }
+  }, 2500);
+};
+
 const handleProcessPayment = async () => {
   cardValidationError.value = '';
   isProcessingPayment.value = true;
 
-  // Open sleek compact floating payment popup window centered on screen
+  // ── MIDTRANS SNAP ──────────────────────────────────────────────────────────
+  if (selectedPaymentMethod.value === 'midtrans') {
+    try {
+      // 1. Get snap_token from backend
+      const response = await api.post('/api/midtrans/create-transaction/', {
+        plan: selectedVIPPlan.value
+      });
+
+      if (!response || !response.data || !response.data.snap_token) {
+        isProcessingPayment.value = false;
+        return;
+      }
+
+      const { snap_token, order_id, checkout_token } = response.data;
+      activeMidtransOrderId.value = order_id;
+      activeMidtransCheckoutToken.value = checkout_token;
+
+      // 2. Load Midtrans Snap.js
+      await loadMidtransSnap();
+
+      // 3. Open Midtrans Snap popup
+      window.snap.pay(snap_token, {
+        onSuccess: (result) => {
+          isProcessingPayment.value = false;
+          isPaymentPaidSuccess.value = true;
+          setTimeout(() => {
+            isPaymentPaidSuccess.value = false;
+            triggerVIPSetup(selectedVIPPlan.value);
+          }, 1000);
+        },
+        onPending: (result) => {
+          // Payment pending (e.g. bank transfer) — start polling
+          startMidtransPolling(order_id);
+        },
+        onError: (result) => {
+          isProcessingPayment.value = false;
+        },
+        onClose: () => {
+          // User closed popup without paying — stop processing and do NOT poll
+          isProcessingPayment.value = false;
+        }
+      });
+    } catch (e) {
+      console.error('Midtrans error:', e);
+      console.error('Midtrans backend response:', e.response?.data);
+      isProcessingPayment.value = false;
+    }
+    return;
+  }
+
+  // ── XENDIT (legacy / disabled) ─────────────────────────────────────────────
   const width = 540;
   const height = 750;
   const left = Math.max(0, (window.screen.width - width) / 2);
@@ -1068,7 +1195,6 @@ const handleProcessPayment = async () => {
     `);
   }
 
-  // Create Secure Invoice via Backend API
   try {
     const response = await api.post('/api/xendit/create-invoice/', {
       plan: selectedVIPPlan.value
@@ -1078,14 +1204,12 @@ const handleProcessPayment = async () => {
       activeXenditInvoiceId.value = response.data.invoice_id;
       activeCheckoutToken.value = response.data.checkout_token;
       
-      // Navigate floating popup window to Official Xendit Checkout Page
       if (paymentWindow && !paymentWindow.closed) {
         paymentWindow.location.href = response.data.invoice_url;
       } else {
         window.open(response.data.invoice_url, 'XenditPaymentCheckout', popupFeatures);
       }
 
-      // Start Real-Time Auto-Check Polling in main Viora window
       startXenditInvoicePolling(response.data.invoice_id, paymentWindow);
     } else {
       if (paymentWindow && !paymentWindow.closed) paymentWindow.close();
@@ -1823,6 +1947,7 @@ const handleLogin = async () => {
       password: loginData.value.password
     });
     isLoggedIn.value = true;
+    applyDefaultThemeForPlan(response.data.vip_plan);
     
     // Read subscription & invoice data directly from Django DB response!
     currentUser.value = {
@@ -1835,6 +1960,7 @@ const handleLogin = async () => {
       referenceId: response.data.reference_id || '',
       paymentStatus: response.data.payment_status || 'UNPAID',
       paymentGateway: response.data.payment_gateway || 'N/A',
+      paymentAmount: response.data.payment_amount || 'N/A',
       paymentDate: response.data.payment_date || 'Payment Required'
     };
 
@@ -1872,6 +1998,7 @@ const handleLogout = async () => {
   stopGuestModernTrial(false);
   try { await api.post('/api/logout/'); } catch (e) {}
   isLoggedIn.value = false;
+  setModernTheme('cosmic');
   currentUser.value = { username: '' };
   isProfileOpen.value = false;
   isWatchlistOpen.value = false;
@@ -1879,6 +2006,17 @@ const handleLogout = async () => {
   watchlistMovies.value = [];
   watchlist.value.clear();
   localStorage.removeItem('viora_auth_user');
+  localStorage.removeItem('viora_user_data');
+  vipSetupData.value = {
+    username: '',
+    email: '',
+    password: '',
+    confirmPassword: '',
+    plan: 'annual',
+    expiryDate: '',
+    invoiceNo: '',
+    paymentGateway: 'Midtrans Snap',
+  };
   
   if (isPlayerOpen.value) {
     closePlayer();
@@ -1895,6 +2033,7 @@ const checkLoginStatus = async () => {
   try {
     const res = await api.get('/api/me/');
     isLoggedIn.value = true;
+    applyDefaultThemeForPlan(res.data.vip_plan);
     
     currentUser.value = {
       username: res.data.username,
@@ -1905,6 +2044,7 @@ const checkLoginStatus = async () => {
       checkoutToken: res.data.checkout_token || '',
       referenceId: res.data.reference_id || '',
       paymentStatus: res.data.payment_status || 'UNPAID',
+      paymentAmount: res.data.payment_amount || 'N/A',
       paymentGateway: res.data.payment_gateway || 'N/A',
       paymentDate: res.data.payment_date || 'Payment Required'
     };
@@ -3466,7 +3606,8 @@ onUnmounted(() => {
                       class="py-1.5 px-1 rounded-lg text-[10px] font-bold transition-all text-center flex items-center justify-center gap-1 border"
                       :class="modernTheme === 'sand' ? 'bg-amber-600/80 border-amber-400 text-white shadow-md' : 'border-transparent text-gray-400 hover:text-white hover:bg-white/10'"
                     >
-                      <span class="w-2 h-2 rounded-full bg-amber-400"></span> Sand
+                      <Lock v-if="!hasAccess" class="w-3 h-3 text-amber-400" />
+                      <span v-else class="w-2 h-2 rounded-full bg-amber-400"></span> Sand
                     </button>
 
                     <button 
@@ -3680,7 +3821,7 @@ onUnmounted(() => {
                 <div class="w-full h-full flex flex-col justify-between space-y-3">
                   <div class="flex items-center justify-between pb-2 border-b border-white/10">
                     <span class="text-xs font-bold text-white flex items-center gap-2">
-                      <Globe class="w-4 h-4 text-blue-400" /> Xendit Official Checkout
+                      <Globe class="w-4 h-4 text-blue-400" /> Midtrans Secure Checkout
                     </span>
                     <button @click="isEmbeddedCheckoutOpen = false" class="text-[11px] font-bold text-gray-400 hover:text-white flex items-center gap-1 transition-all">
                       ← Back to Options
@@ -3703,10 +3844,10 @@ onUnmounted(() => {
               <!-- PRE-PAYMENT SELECTION & INFO -->
               <template v-else>
                 <div>
-                  <h4 class="text-xl font-black mb-1 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-200' : 'text-white'">Xendit Official Gateway</h4>
+                  <h4 class="text-xl font-black mb-1 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-200' : 'text-white'">Midtrans Snap Gateway</h4>
                   <p class="text-xs mb-5 transition-colors duration-500" :class="selectedVIPPlan === 'annual' ? 'text-amber-300/60' : 'text-gray-400'">Pay securely via QRIS, Credit Card, Bank VA & E-Wallets</p>
 
-                  <!-- Xendit All-in-One Smart Gateway Hub -->
+                  <!-- Midtrans All-in-One Smart Gateway Hub -->
                   <div class="mb-5">
                     <div class="p-5 rounded-3xl bg-black/40 border transition-colors duration-500 space-y-4" :class="selectedVIPPlan === 'annual' ? 'border-amber-400/20' : 'border-white/10'">
                       
@@ -3719,7 +3860,7 @@ onUnmounted(() => {
                           <Globe class="w-6 h-6 animate-pulse" />
                         </div>
                         <div>
-                          <h5 class="text-sm font-black text-white">Xendit All-in-One Checkout</h5>
+                          <h5 class="text-sm font-black text-white">Midtrans Secure Checkout</h5>
                           <p class="text-[11px] text-gray-400">Official Instant Automated Payment Hub</p>
                         </div>
                       </div>
@@ -3756,6 +3897,46 @@ onUnmounted(() => {
                         ⚡ Embedded Checkout: Complete payment right inside Viora.
                       </div>
 
+                    </div>
+                  </div>
+
+                  <!-- Payment Gateway Selector -->
+                  <div class="mb-4">
+                    <p class="text-[9px] uppercase font-black text-gray-400 mb-2 tracking-widest">Pay via</p>
+                    <div class="flex gap-2">
+                      <!-- Midtrans (Active) -->
+                      <button
+                        @click="selectedPaymentMethod = 'midtrans'"
+                        class="flex-1 flex items-center gap-2 p-2.5 rounded-xl border transition-all duration-300 cursor-pointer"
+                        :class="selectedPaymentMethod === 'midtrans'
+                          ? (selectedVIPPlan === 'annual' ? 'bg-amber-500/15 border-amber-400/60 shadow-[0_0_15px_rgba(245,158,11,0.15)]' : 'bg-sky-500/15 border-sky-400/60 shadow-[0_0_15px_rgba(56,189,248,0.15)]')
+                          : 'bg-white/5 border-white/10 hover:border-white/20'"
+                      >
+                        <div class="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
+                          <span class="text-white font-black text-[9px]">MT</span>
+                        </div>
+                        <div class="text-left">
+                          <p class="text-[10px] font-black text-white">Midtrans</p>
+                          <p class="text-[8px] text-emerald-400 font-bold">● Active</p>
+                        </div>
+                        <div v-if="selectedPaymentMethod === 'midtrans'" class="ml-auto">
+                          <CheckCircle2 class="w-3.5 h-3.5" :class="selectedVIPPlan === 'annual' ? 'text-amber-400' : 'text-sky-400'" />
+                        </div>
+                      </button>
+
+                      <!-- Xendit (Disabled) -->
+                      <div
+                        class="flex-1 flex items-center gap-2 p-2.5 rounded-xl border bg-white/3 border-white/8 opacity-50 cursor-not-allowed relative overflow-hidden"
+                      >
+                        <div class="w-7 h-7 rounded-lg bg-blue-900/60 flex items-center justify-center flex-shrink-0">
+                          <span class="text-blue-400 font-black text-[9px]">XN</span>
+                        </div>
+                        <div class="text-left">
+                          <p class="text-[10px] font-black text-gray-400">Xendit</p>
+                          <p class="text-[8px] text-gray-500 font-bold">Coming Soon</p>
+                        </div>
+                        <span class="ml-auto text-[8px] font-black bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-md">OFF</span>
+                      </div>
                     </div>
                   </div>
 
@@ -3810,9 +3991,9 @@ onUnmounted(() => {
                     <div v-if="!isPaymentPaidSuccess" class="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-center space-y-3">
                       <div class="flex items-center justify-center gap-2 text-blue-300 font-bold text-xs">
                         <Loader2 class="w-4 h-4 animate-spin text-blue-400" />
-                        <span>Waiting for Xendit Payment Confirmation...</span>
+                        <span>{{ selectedPaymentMethod === 'midtrans' ? 'Waiting for Midtrans Payment...' : 'Waiting for Xendit Payment Confirmation...' }}</span>
                       </div>
-                      <p class="text-[11px] text-gray-300">Complete payment on the Xendit checkout window. Account Setup Modal will open automatically upon payment confirmation.</p>
+                      <p class="text-[11px] text-gray-300">{{ selectedPaymentMethod === 'midtrans' ? 'Complete payment on the Midtrans Snap popup. Setup Modal will open automatically upon confirmation.' : 'Complete payment on the Xendit checkout window. Account Setup Modal will open automatically upon payment confirmation.' }}</p>
                     </div>
                     <div v-else class="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-center space-y-4 shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
                       <div class="absolute inset-0 bg-gradient-to-r from-emerald-500/0 via-emerald-500/10 to-emerald-500/0 w-[200%] animate-[shimmer_2s_infinite] -z-10"></div>
@@ -3879,7 +4060,7 @@ onUnmounted(() => {
                 Complete Your<br/><span class="text-transparent bg-clip-text transition-all duration-500" :style="vipSetupData.plan === 'annual' ? 'background-image: linear-gradient(to right, #fcd34d, #f97316)' : 'background-image: linear-gradient(to right, #38bdf8, #818cf8)'">VIP Setup</span>
               </h3>
               <p class="text-[13px] text-gray-300 mb-8 leading-relaxed">
-                Your Xendit payment is verified! Create your custom login credentials to activate your VIP Cinema Pass.
+                Your payment is verified! Create your custom login credentials to activate your VIP Cinema Pass.
               </p>
 
               <!-- Verified Subscription Badge Card -->
@@ -4211,7 +4392,7 @@ onUnmounted(() => {
                       @click="isSettingsOpen = false; openVIPModal();"
                       class="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-black text-white transition-all shadow-md shadow-blue-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <Sparkles class="w-3.5 h-3.5 text-amber-300" /> {{ currentUser.vipPlan === 'admin' ? 'Admin Unlimited Granted' : (currentUser.vipPlan && currentUser.vipPlan !== 'none' ? 'Extend / Renew VIP' : 'Choose Plan & Pay via Xendit') }}
+                      <Sparkles class="w-3.5 h-3.5 text-amber-300" /> {{ currentUser.vipPlan === 'admin' ? 'Admin Unlimited Granted' : (currentUser.vipPlan && currentUser.vipPlan !== 'none' ? 'Extend / Renew VIP' : 'Choose Plan & Pay via Midtrans') }}
                     </button>
                   </div>
                 </div>
@@ -4463,7 +4644,7 @@ onUnmounted(() => {
           <div class="p-4 rounded-2xl bg-white/5 border border-white/10 mb-6 space-y-3 text-xs">
             <div class="flex items-center justify-between pb-2 border-b border-white/10">
               <span class="text-gray-400 font-bold uppercase text-[10px]">Reference ID</span>
-              <span class="font-mono font-bold text-amber-300">{{ currentUser.referenceId || vipSetupData.invoiceNo || '-' }}</span>
+              <span class="font-mono font-bold text-amber-300">{{ currentUser.referenceId || '-' }}</span>
             </div>
             <div class="flex items-center justify-between">
               <span class="text-gray-400 font-bold uppercase text-[10px]">Token ID</span>
@@ -4475,7 +4656,7 @@ onUnmounted(() => {
             </div>
             <div class="flex items-center justify-between">
               <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Link Description</span>
-              <span class="font-semibold text-white">{{ currentUser.vipPlan === 'monthly' ? 'Viora VIP Monthly Pass' : 'Viora VIP 1-Year Pass' }}</span>
+              <span class="font-semibold text-white">{{ currentUser.vipPlan === 'monthly' ? 'Viora VIP Monthly Pass' : (currentUser.vipPlan === 'annual' ? 'Viora VIP 1-Year Pass' : 'N/A') }}</span>
             </div>
             <div class="flex items-center justify-between pt-2 border-t border-white/10">
               <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Status</span>
@@ -4497,7 +4678,7 @@ onUnmounted(() => {
             </div>
             <div class="flex items-center justify-between">
               <span class="text-gray-400 font-bold uppercase text-[10px]">Payment Gateway</span>
-              <span class="font-semibold text-blue-300">Xendit Official Gateway</span>
+              <span class="font-semibold text-blue-300">{{ currentUser.paymentGateway || 'Unknown' }}</span>
             </div>
           </div>
 
@@ -4506,14 +4687,14 @@ onUnmounted(() => {
             <span class="text-[10px] font-black uppercase text-gray-400 block mb-2">Itemised Breakdown</span>
             <div class="flex items-center justify-between py-2 border-b border-white/10 text-xs">
               <div>
-                <span class="font-bold text-white block">{{ currentUser.vipPlan === 'monthly' ? 'VIP Monthly Cinema Pass' : 'VIP Annual Cinema Pass' }}</span>
+                <span class="font-bold text-white block">{{ currentUser.vipPlan === 'monthly' ? 'VIP Monthly Cinema Pass' : (currentUser.vipPlan === 'annual' ? 'VIP Annual Cinema Pass' : 'N/A') }}</span>
                 <span class="text-[10px] text-gray-400">4K Ultra HD • Ad-Free Cinema • Multi-Device</span>
               </div>
-              <span class="font-black text-white">{{ currentUser.vipPlan === 'monthly' ? '$1.99 USD' : '$11.99 USD' }}</span>
+              <span class="font-black text-white">{{ currentUser.paymentAmount || 'N/A' }}</span>
             </div>
             <div class="flex items-center justify-between pt-3 text-xs">
               <span class="font-black uppercase text-gray-300 text-[10px]">Total Paid Amount</span>
-              <span class="text-base font-black text-amber-300">{{ currentUser.vipPlan === 'monthly' ? '$1.99 USD' : '$11.99 USD' }}</span>
+              <span class="text-base font-black text-amber-300">{{ currentUser.paymentAmount || 'N/A' }}</span>
             </div>
           </div>
 

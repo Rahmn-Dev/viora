@@ -22,7 +22,7 @@ class VIPSubscriptionAdmin(admin.ModelAdmin):
         ('Billing & Gateway Information', {
             'fields': ('payment_gateway', 'amount_paid', 'valid_until', 'created_at')
         }),
-        ('Xendit Official Tax Invoice Details', {
+        ('Payment Gateway Invoice Details', {
             'fields': ('reference_id', 'token_id', 'invoice_no', 'payment_link_description')
         }),
         ('Security & Tokens', {

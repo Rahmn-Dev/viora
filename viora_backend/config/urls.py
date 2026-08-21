@@ -16,15 +16,23 @@ from core.views import (
     api_create_invoice,
     api_check_invoice_status,
     api_link_invoice,
+    api_midtrans_create_transaction,
+    api_midtrans_check_status,
+    api_midtrans_link_account,
 )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # Secure Payment & Invoice Flow
+    # Xendit Payment Flow (disabled in frontend, kept for legacy)
     path('api/xendit/create-invoice/', api_create_invoice),
     path('api/xendit/check-status/', api_check_invoice_status),
     path('api/xendit/link-account/', api_link_invoice),
+
+    # Midtrans Snap Payment Flow
+    path('api/midtrans/create-transaction/', api_midtrans_create_transaction),
+    path('api/midtrans/check-status/', api_midtrans_check_status),
+    path('api/midtrans/link-account/', api_midtrans_link_account),
 
     # Auth, Profile & VIP Subscription endpoints (session-based)
     path('api/register/', api_register),
