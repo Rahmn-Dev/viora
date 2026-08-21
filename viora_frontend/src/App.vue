@@ -348,6 +348,14 @@ const setGlassMode = (mode) => {
     isLoginOpen.value = true;
     return;
   }
+
+  // Block premium glass mode for free users and trigger upsell
+  if (isLoggedIn.value && !hasAccess.value && mode === 'full') {
+    isCustomizationOpen.value = false;
+    openVIPModal();
+    return;
+  }
+
   glassMode.value = mode;
   localStorage.setItem('viora_glass_mode', mode);
 };
@@ -409,6 +417,14 @@ const setSmoothScroll = (enabled) => {
     isLoginOpen.value = true;
     return;
   }
+
+  // Block premium smooth scroll for free users and trigger upsell
+  if (isLoggedIn.value && !hasAccess.value && enabled) {
+    isCustomizationOpen.value = false;
+    openVIPModal();
+    return;
+  }
+
   isSmoothScrollEnabled.value = enabled;
   localStorage.setItem('viora_smooth_scroll', enabled ? 'true' : 'false');
   initLenis();
