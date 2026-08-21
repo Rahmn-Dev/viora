@@ -222,6 +222,9 @@ class UpdateWatchHistoryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if not (request.user.is_superuser or (hasattr(request.user, 'vipsubscription') and request.user.vipsubscription.status == 'PAID')):
+            return Response({'error': 'VIP Access Required'}, status=403)
+            
         histories = WatchHistory.objects.filter(user=request.user)
 
         data = [
@@ -241,7 +244,8 @@ class UpdateWatchHistoryView(APIView):
         return Response(data)
 
     def post(self, request):
-        print(request.data)
+        if not (request.user.is_superuser or (hasattr(request.user, 'vipsubscription') and request.user.vipsubscription.status == 'PAID')):
+            return Response({'error': 'VIP Access Required'}, status=403)
 
         tmdb_id = request.data.get('tmdb_id')
         media_type = request.data.get('media_type')
@@ -281,6 +285,9 @@ class UpdateWatchHistoryView(APIView):
         }, status=status.HTTP_200_OK)
 
     def delete(self, request):
+        if not (request.user.is_superuser or (hasattr(request.user, 'vipsubscription') and request.user.vipsubscription.status == 'PAID')):
+            return Response({'error': 'VIP Access Required'}, status=403)
+            
         tmdb_id = request.data.get('tmdb_id')
         media_type = request.data.get('media_type')
 
@@ -296,6 +303,9 @@ class UpdateWatchHistoryView(APIView):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_watchlist(request):
+    if not (request.user.is_superuser or (hasattr(request.user, 'vipsubscription') and request.user.vipsubscription.status == 'PAID')):
+        return Response({'error': 'VIP Access Required'}, status=403)
+        
     items = Watchlist.objects.filter(user=request.user)
 
     data = [
@@ -317,6 +327,9 @@ def get_watchlist(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def toggle_watchlist(request):
+    if not (request.user.is_superuser or (hasattr(request.user, 'vipsubscription') and request.user.vipsubscription.status == 'PAID')):
+        return Response({'error': 'VIP Access Required'}, status=403)
+        
     user = request.user
     tmdb_id = request.data.get('tmdb_id')
 
